@@ -17,6 +17,7 @@ rules:
   resources:
   - controllerconfigs
   - sqsconsumers
+  - unstructureddataproducts
   verbs:
   - create
   - delete
@@ -30,6 +31,7 @@ rules:
   resources:
   - controllerconfigs/finalizers
   - sqsconsumers/finalizers
+  - unstructureddataproducts/finalizers
   verbs:
   - update
 - apiGroups:
@@ -37,6 +39,7 @@ rules:
   resources:
   - controllerconfigs/status
   - sqsconsumers/status
+  - unstructureddataproducts/status
   verbs:
   - get
   - patch
