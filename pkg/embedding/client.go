@@ -130,7 +130,8 @@ func createHTTPClient(certPath string) (*http.Client, error) {
 	}, nil
 }
 
-func (c *SelfHostedModelClient) GenerateEmbeddings(ctx context.Context, texts []string, apiKeySecret *corev1.Secret) (*EmbeddingResult, error) {
+func (c *SelfHostedModelClient) GenerateEmbeddings(ctx context.Context,
+	texts []string, apiKeySecret *corev1.Secret) (*EmbeddingResult, error) {
 	logger := log.FromContext(ctx)
 	logger.Info("generating embeddings in batch", "textCount", len(texts))
 
@@ -217,7 +218,8 @@ func (c *SelfHostedModelClient) GenerateEmbeddings(ctx context.Context, texts []
 	}, nil
 }
 
-func (c *GeminiModelClient) GenerateEmbeddings(ctx context.Context, texts []string, apiKeySecret *corev1.Secret) (*EmbeddingResult, error) {
+func (c *GeminiModelClient) GenerateEmbeddings(ctx context.Context,
+	texts []string, apiKeySecret *corev1.Secret) (*EmbeddingResult, error) {
 	logger := log.FromContext(ctx)
 	logger.Info("generating embeddings in batch", "textCount", len(texts))
 	return nil, nil

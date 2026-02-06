@@ -29,7 +29,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	operatorv1alpha1 "github.com/redhat-data-and-ai/unstructured-data-controller/api/v1alpha1"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/internal/controller/controllerutils"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/awsclienthandler"
@@ -51,7 +50,6 @@ type VectorEmbeddingsGenerationJobReconciler struct {
 	client.Client
 	Scheme    *runtime.Scheme
 	fileStore *filestore.FileStore
-	s3Client  *s3.Client
 }
 
 // +kubebuilder:rbac:groups=operator.dataverse.redhat.com,resources=vectorembeddingsgenerationjobs,verbs=get;list;watch;create;update;patch;delete
@@ -144,6 +142,11 @@ func (r *VectorEmbeddingsGenerationJobReconciler) Reconcile(ctx context.Context,
 		}
 	}
 
+	if len(embeddingErrors) > 0 {
+		logger.Error(embeddingErrors[0], "failed to process some chunked files")
+		return ctrl.Result{}, fmt.Errorf("failed to process some chunked files")
+	}
+
 	return ctrl.Result{}, nil
 }
 
@@ -222,10 +225,10 @@ func (r *VectorEmbeddingsGenerationJobReconciler) processChunkedFile(ctx context
 
 	// rearrange the embeddings
 	embeddings := make([]*unstructured.Embeddings, len(embeddingResult.Embeddings))
-	for i, embedding := range embeddingResult.Embeddings {
+	for i, embeddingVector := range embeddingResult.Embeddings {
 		embeddings[i] = &unstructured.Embeddings{
 			Text:      texts[i],
-			Embedding: embedding,
+			Embedding: embeddingVector,
 		}
 	}
 

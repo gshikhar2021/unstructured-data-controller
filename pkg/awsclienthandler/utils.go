@@ -20,7 +20,8 @@ type AWSConfig struct {
 func getAWSConfig(ctx context.Context, awsConfig *AWSConfig) (aws.Config, error) {
 	loadOptions := []func(*config.LoadOptions) error{
 		config.WithRegion(awsConfig.Region),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(awsConfig.AccessKeyID, awsConfig.SecretAccessKey, awsConfig.SessionToken)),
+		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(awsConfig.AccessKeyID,
+			awsConfig.SecretAccessKey, awsConfig.SessionToken)),
 	}
 
 	return config.LoadDefaultConfig(ctx, loadOptions...)
