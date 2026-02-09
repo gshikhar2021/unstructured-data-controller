@@ -21,7 +21,6 @@ import (
 	"fmt"
 
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -29,15 +28,13 @@ import (
 
 	operatorv1alpha1 "github.com/redhat-data-and-ai/unstructured-data-controller/api/v1alpha1"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/internal/controller/controllerutils"
-	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/awsclienthandler"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/filestore"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/unstructured"
-	corev1 "k8s.io/api/core/v1"
 )
 
 var (
-	cacheDirectory    = "/Users/shikgupt/Unstructured-Data-Initiative/unstructured-data-controller/tmp/cache/"
-	dataStorageBucket = "data-storage-bucket"
+	cacheDirectory    string
+	dataStorageBucket string
 )
 
 const (
@@ -51,9 +48,9 @@ type UnstructuredDataProductReconciler struct {
 	fileStore *filestore.FileStore
 }
 
-// +kubebuilder:rbac:groups=operator.dataverse.redhat.com,resources=unstructureddataproducts,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=operator.dataverse.redhat.com,resources=unstructureddataproducts/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=operator.dataverse.redhat.com,resources=unstructureddataproducts/finalizers,verbs=update
+// +kubebuilder:rbac:groups=operator.dataverse.redhat.com,namespace=unstructured-controller-namespace,resources=unstructureddataproducts,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=operator.dataverse.redhat.com,namespace=unstructured-controller-namespace,resources=unstructureddataproducts/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=operator.dataverse.redhat.com,namespace=unstructured-controller-namespace,resources=unstructureddataproducts/finalizers,verbs=update
 
 func (r *UnstructuredDataProductReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
@@ -65,32 +62,6 @@ func (r *UnstructuredDataProductReconciler) Reconcile(ctx context.Context, req c
 		return ctrl.Result{}, err
 	}
 	dataProductName := unstructuredDataProductCR.Name
-
-	// read AWS secret
-	awsSecret := &corev1.Secret{}
-	if err := r.Get(ctx, types.NamespacedName{
-		Name:      unstructuredDataProductCR.Spec.AwsSecret,
-		Namespace: unstructuredDataProductCR.Namespace,
-	}, awsSecret); err != nil {
-		logger.Error(err, "failed to get AWS secret")
-		return ctrl.Result{}, err
-	}
-
-	// extract AWS config from secret and initialize global S3 client
-	awsConfig := &awsclienthandler.AWSConfig{
-		Region:          string(awsSecret.Data["AWS_REGION"]),
-		AccessKeyID:     string(awsSecret.Data["AWS_ACCESS_KEY_ID"]),
-		SecretAccessKey: string(awsSecret.Data["AWS_SECRET_ACCESS_KEY"]),
-		SessionToken:    string(awsSecret.Data["AWS_SESSION_TOKEN"]),
-		Endpoint:        string(awsSecret.Data["AWS_ENDPOINT"]),
-	}
-
-	_, err := awsclienthandler.NewS3ClientFromConfig(ctx, awsConfig)
-	if err != nil {
-		logger.Error(err, "failed to initialize S3 client")
-		return ctrl.Result{}, err
-	}
-	logger.Info("S3 client initialized successfully")
 
 	// set status to waiting
 	unstructuredDataProductCR.SetWaiting()

@@ -4,7 +4,7 @@ metadata:
   labels:
     app.kubernetes.io/name: unstructured-data-controller
     app.kubernetes.io/managed-by: kustomize
-  name: unstructureddataproduct-sample
+  name: testunstructureddataproduct
 spec:
   sourceConfig:
     type: "s3"
@@ -43,4 +43,3 @@ spec:
       referenceLinks: true
       headingHierarchy: true
       joinTableRows: true
-  awsSecret: aws-secret

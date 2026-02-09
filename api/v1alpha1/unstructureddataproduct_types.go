@@ -93,7 +93,6 @@ type UnstructuredDataProductSpec struct {
 	DestinationConfig       DestinationConfig       `json:"destinationConfig,omitempty"`
 	DocumentProcessorConfig DocumentProcessorConfig `json:"documentProcessorConfig,omitempty"`
 	ChunksGeneratorConfig   ChunksGeneratorConfig   `json:"chunksGeneratorConfig,omitempty"`
-	AwsSecret               string                  `json:"awsSecret,omitempty"`
 }
 
 type SourceConfig struct {

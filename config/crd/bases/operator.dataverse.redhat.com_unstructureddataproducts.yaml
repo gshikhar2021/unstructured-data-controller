@@ -48,8 +48,6 @@ spec:
             description: UnstructuredDataProductSpec defines the desired state of
               UnstructuredDataProduct
             properties:
-              awsSecret:
-                type: string
               chunksGeneratorConfig:
                 properties:
                   markdownSplitterConfig:
