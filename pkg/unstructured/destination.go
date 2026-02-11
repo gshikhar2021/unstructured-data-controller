@@ -25,7 +25,8 @@ type SnowflakeInternalStage struct {
 	Stage              string
 }
 
-func (d *SnowflakeInternalStage) SyncFilesToDestination(ctx context.Context, fs *filestore.FileStore, convertedFilePaths []string) error {
+func (d *SnowflakeInternalStage) SyncFilesToDestination(ctx context.Context,
+	fs *filestore.FileStore, convertedFilePaths []string) error {
 	logger := log.FromContext(ctx)
 	logger.Info("ingesting data to snowflake internal stage", "filePaths", convertedFilePaths)
 
@@ -76,7 +77,8 @@ func (d *SnowflakeInternalStage) SyncFilesToDestination(ctx context.Context, fs 
 
 		// check if chunks file already exists in the stage
 		if _, exists := convertedFilesInStage[convertedFileInFilestore.ConvertedDocument.Metadata.RawFilePath]; exists {
-			logger.Info("file already exists in the stage", "file", convertedFileInFilestore.ConvertedDocument.Metadata.RawFilePath)
+			logger.Info("file already exists in the stage", "file",
+				convertedFileInFilestore.ConvertedDocument.Metadata.RawFilePath)
 
 			convertedFileInStage := convertedFilesInStage[convertedFileInFilestore.ConvertedDocument.Metadata.RawFilePath]
 
@@ -84,7 +86,8 @@ func (d *SnowflakeInternalStage) SyncFilesToDestination(ctx context.Context, fs 
 			delete(convertedFilesInStage, convertedFileInFilestore.ConvertedDocument.Metadata.RawFilePath)
 
 			if convertedFileInStage.ConvertedDocument.Metadata.Equal(convertedFileInFilestore.ConvertedDocument.Metadata) {
-				logger.Info("file is already in the stage and the configuration is the same, skipping ...", "file", convertedFileInFilestore.ConvertedDocument.Metadata.RawFilePath)
+				logger.Info("file is already in the stage and the configuration is the same, skipping ...",
+					"file", convertedFileInFilestore.ConvertedDocument.Metadata.RawFilePath)
 				// nothing to do, file is already in the stage
 				continue
 			}
@@ -115,8 +118,9 @@ func (d *SnowflakeInternalStage) SyncFilesToDestination(ctx context.Context, fs 
 		logger.Info("successfully uploaded file to snowflake internal stage", "file", convertedFilePathInFilestore)
 
 		if len(fileRows) == 0 {
-			logger.Error(fmt.Errorf("no file rows returned while uploading file to snowflake internal stage: %s", convertedFilePathInFilestore), "file", convertedFilePathInFilestore)
-			errorList = append(errorList, fmt.Errorf("no file rows returned while uploading file to snowflake internal stage: %s", convertedFilePathInFilestore))
+			err := fmt.Errorf("no file rows returned while uploading file: %s", convertedFilePathInFilestore)
+			logger.Error(err, "file", convertedFilePathInFilestore)
+			errorList = append(errorList, err)
 			continue
 		}
 	}
