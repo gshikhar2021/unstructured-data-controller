@@ -106,7 +106,8 @@ func setColumnToMatchingField(item reflect.Value, colName string, value any) err
 }
 
 // assignFieldValue assigns a column value to a struct field, handling type conversion.
-func assignFieldValue(item reflect.Value, field reflect.StructField, colValue reflect.Value, fieldValue reflect.Value) error {
+func assignFieldValue(item reflect.Value, field reflect.StructField,
+	colValue reflect.Value, fieldValue reflect.Value) error {
 	if !colValue.IsValid() || !fieldValue.CanSet() {
 		return nil // Skip invalid or non-settable values
 	}

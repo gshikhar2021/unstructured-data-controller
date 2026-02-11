@@ -247,7 +247,7 @@ func (r *ControllerConfigReconciler) fetchPrivateKeyFromSecret(ctx context.Conte
 	logger := log.FromContext(ctx)
 	logger.Info(fmt.Sprintf("fetching private key from secret %s in namespace %s", privateKeyName, namespace))
 	secret := &corev1.Secret{}
-	if err := r.Client.Get(ctx,
+	if err := r.Get(ctx,
 		types.NamespacedName{Name: privateKeyName, Namespace: namespace}, secret); err != nil {
 		logger.Error(err, fmt.Sprintf("error fetching secret %s, retrying in 10 seconds", privateKeyName))
 		return nil, errors.New("secret not found")
