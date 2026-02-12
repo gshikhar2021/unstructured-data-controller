@@ -69,6 +69,17 @@ func NewClient(config *ClientConfig) (*Client, error) {
 	return client, nil
 }
 
+func GetClient(account string) (*Client, error) {
+	clientMutex.Lock()
+	defer clientMutex.Unlock()
+
+	client, exists := clients[account]
+	if !exists {
+		return nil, fmt.Errorf("no snowflake client found for account: %s", account)
+	}
+	return client, nil
+}
+
 func (c *Client) Ping(ctx context.Context) error {
 	return c.conn.PingContext(ctx)
 }

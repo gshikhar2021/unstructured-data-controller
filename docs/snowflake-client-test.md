@@ -1,222 +1,232 @@
-# Unstructured Data Controller - Complete Setup Guide
+# Unstructured Data Controller - Quick Start Guide
 
-This guide walks you through setting up the Unstructured Data Controller from scratch.
+Simple guide to get the Unstructured Data Controller up and running.
 
-## Table of Contents
-1. [Prerequisites](#prerequisites)
-2. [Local Development Setup](#local-development-setup)
-3. [Snowflake Setup](#snowflake-setup)
-4. [Kubernetes Cluster Setup](#kubernetes-cluster-setup)
-5. [Deploy Controller](#deploy-controller)
-6. [Testing & Verification](#testing--verification)
-7. [Troubleshooting](#troubleshooting)
+## What It Does
+
+The controller automatically processes unstructured files from S3:
+1. **Reads files** from S3 bucket
+2. **Converts** them to Markdown using Docling
+3. **Chunks** the content for better processing
+4. **Stores** the results in Snowflake
 
 ---
 
 ## Prerequisites
 
-Before starting, ensure you have the following installed:
-
-- **Docker** (for Kind)
-- **kubectl** (Kubernetes CLI)
-- **kind** (Kubernetes in Docker)
-- **awslocal** (LocalStack AWS CLI) or **aws** CLI
-- **Snowflake Account** with appropriate permissions
-- **Go 1.24+** (for building the controller)
-
-### Environment Variables
-
-Set the following environment variable:
-```bash
-export SNOWFLAKE_TARGET=<your-snowflake-environment>  # e.g., rhplatformtest
-```
+- Kubernetes cluster (or Kind for local dev)
+- AWS/S3 access
+- Snowflake account
+- Go 1.24+ (for local development)
 
 ---
 
-## Local Development Setup
+## Quick Setup
 
-### 1. Create Kind Cluster
-
-```bash
-kind create cluster --name unstructured-data-controller
-```
-
-### 2. Create Namespace
+### 1. Create Namespace
 
 ```bash
 kubectl create namespace unstructured-controller-namespace
 ```
 
----
+### 2. Create Secrets
 
-## Snowflake Setup
-
-Run these commands in your Snowflake SQL worksheet:
-
-```sql
-USE WAREHOUSE DEFAULT;
-USE DATABASE SNOWPIPE_DB;
-
--- Create schema
-CREATE SCHEMA IF NOT EXISTS TESTUNSTRUCTUREDDATAPRODUCT;
-
--- Create stage with JSON file format
-CREATE OR REPLACE STAGE SNOWPIPE_DB.TESTUNSTRUCTUREDDATAPRODUCT.TESTUNSTRUCTUREDDATAPRODUCT_INTERNAL_STG
-    FILE_FORMAT = (TYPE = 'JSON');
-
--- Create role
-CREATE ROLE IF NOT EXISTS TESTUNSTRUCTUREDDATAPRODUCT_SNOWPIPE_ROLE;
-
--- Grant permissions
-GRANT USAGE ON DATABASE SNOWPIPE_DB TO ROLE TESTUNSTRUCTUREDDATAPRODUCT_SNOWPIPE_ROLE;
-GRANT USAGE ON SCHEMA SNOWPIPE_DB.TESTUNSTRUCTUREDDATAPRODUCT TO ROLE TESTUNSTRUCTUREDDATAPRODUCT_SNOWPIPE_ROLE;
-GRANT READ, WRITE ON STAGE SNOWPIPE_DB.TESTUNSTRUCTUREDDATAPRODUCT.TESTUNSTRUCTUREDDATAPRODUCT_INTERNAL_STG TO ROLE TESTUNSTRUCTUREDDATAPRODUCT_SNOWPIPE_ROLE;
-
--- Grant role to the service account user
-GRANT ROLE TESTUNSTRUCTUREDDATAPRODUCT_SNOWPIPE_ROLE TO USER TESTUNSTRUCTUREDDATAPRODUCT_SNOWPIPE_PLATFORMTEST_APPUSER;
-```
-
----
-
-## Kubernetes Cluster Setup
-
-### 1. Create AWS Secret
-
-Create or update `config/samples/aws-secret.yaml`:
-
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: aws-secret
-  namespace: unstructured-controller-namespace
-type: Opaque
-stringData:
-  AWS_REGION: us-west-2
-  AWS_ACCESS_KEY_ID: LSIAQAAAAAAVNCBMPNSG
-  AWS_SECRET_ACCESS_KEY: LSIAQAAAAAAVNCBMPNSG
-  AWS_SESSION_TOKEN: LSIAQAAAAAAVNCBMPNSG
-  AWS_ENDPOINT: http://localstack:4566  # For LocalStack
-```
-
-Apply the secret:
+**AWS Secret:**
 ```bash
 kubectl apply -f config/samples/aws-secret.yaml
 ```
 
-### 2. Create Snowflake Private Key Secret
-
+**Snowflake Private Key:**
 ```bash
 kubectl create secret generic rhplatformtest-private-key \
   -n unstructured-controller-namespace \
-  --from-file=privateKey=/path/to/your/rsa_key.p8
+  --from-file=privateKey=/path/to/rsa_key.p8
 ```
 
-**Note**: Replace `/path/to/your/rsa_key.p8` with the actual path to your Snowflake private key file.
+### 3. Setup Snowflake
 
-Verify secrets:
-```bash
-kubectl get secrets -n unstructured-controller-namespace
+Run in Snowflake SQL (using names from your config):
+
+```sql
+-- Use your warehouse and database
+USE WAREHOUSE default;
+USE DATABASE SHIKHAR_TESTING;
+
+-- Create schema and stage
+CREATE SCHEMA IF NOT EXISTS TESTINGSCHEMA;
+CREATE OR REPLACE STAGE SHIKHAR_TESTING.TESTINGSCHEMA.TESTINGSCHEMA_INTERNAL_STG 
+    FILE_FORMAT = (TYPE = 'JSON');
+
+-- Create role and grant permissions
+CREATE ROLE IF NOT EXISTS TESTING_ROLE;
+GRANT USAGE ON DATABASE SHIKHAR_TESTING TO ROLE TESTING_ROLE;
+GRANT USAGE ON SCHEMA SHIKHAR_TESTING.TESTINGSCHEMA TO ROLE TESTING_ROLE;
+GRANT READ, WRITE ON STAGE SHIKHAR_TESTING.TESTINGSCHEMA.TESTINGSCHEMA_INTERNAL_STG TO ROLE TESTING_ROLE;
+
+-- Grant role to your user (from controllerconfig.yaml)
+GRANT ROLE TESTING_ROLE TO USER shikgupt;
 ```
 
-### 3. Apply ControllerConfig CR
+### 4. Deploy Controller
 
-Update `config/samples/operator_v1alpha1_controllerconfig.yaml` with your settings, then apply:
-
+**Apply ControllerConfig:**
 ```bash
 kubectl apply -f config/samples/operator_v1alpha1_controllerconfig.yaml
 ```
 
-Wait for the ControllerConfig to be ready:
-```bash
-kubectl get controllerconfig -n unstructured-controller-namespace -w
-```
-
-### 4. Apply SQSConsumer CR
-
-```bash
-kubectl apply -f config/samples/operator_v1alpha1_sqsconsumer.yaml
-```
-
-Verify:
-```bash
-kubectl get sqsconsumer -n unstructured-controller-namespace
-```
-
-### 5. Apply UnstructuredDataProduct CR
-
+**Apply UnstructuredDataProduct:**
 ```bash
 kubectl apply -f config/samples/operator_v1alpha1_unstructureddataproduct.yaml
 ```
 
-Verify:
+**Run Controller (local dev):**
 ```bash
-kubectl get unstructureddataproduct -n unstructured-controller-namespace
-kubectl describe unstructureddataproduct testunstructureddataproduct -n unstructured-controller-namespace
-```
-
----
-
-## Deploy Controller
-
-### Option 1: Run Locally (Development)
-
-```bash
-# Set environment variable
-export SNOWFLAKE_TARGET=rhplatformtest
-
-# Run the controller
 make run
 ```
 
 ---
 
-## Testing & Verification
+## Test It
 
-### 1. Upload Test Files to S3
-
-Using LocalStack (awslocal):
+### Upload a File
 
 ```bash
-# Create bucket if not exists
-awslocal s3 mb s3://data-ingestion-bucket
+# Upload to S3
+aws s3 cp test.pdf s3://data-ingestion-bucket/testunstructureddataproduct/
 
-# Upload test PDF file
-awslocal s3 cp /path/to/test.pdf s3://data-ingestion-bucket/testunstructureddataproduct/
-
-# Verify upload
-awslocal s3 ls s3://data-ingestion-bucket/testunstructureddataproduct/
+# The controller will automatically:
+# 1. Download the file
+# 2. Convert it to Markdown
+# 3. Chunk the content
+# 4. Upload to Snowflake
 ```
 
-
-### 3. Verify Files in Snowflake Stage
+### Check Results in Snowflake
 
 ```sql
-USE ROLE TESTUNSTRUCTUREDDATAPRODUCT_SNOWPIPE_ROLE;
+-- Switch to the correct role
+USE ROLE TESTING_ROLE;
 
--- List files in the stage
-LIST @SNOWPIPE_DB.TESTUNSTRUCTUREDDATAPRODUCT.TESTUNSTRUCTUREDDATAPRODUCT_INTERNAL_STG;
+-- List files in stage
+LIST @SHIKHAR_TESTING.TESTINGSCHEMA.TESTINGSCHEMA_INTERNAL_STG;
 
--- Check file contents
-SELECT $1 AS data
-FROM @SNOWPIPE_DB.TESTUNSTRUCTUREDDATAPRODUCT.TESTUNSTRUCTUREDDATAPRODUCT_INTERNAL_STG
+-- View processed data
+SELECT $1 AS data 
+FROM @SHIKHAR_TESTING.TESTINGSCHEMA.TESTINGSCHEMA_INTERNAL_STG 
 LIMIT 1;
 ```
 
-Expected output:
-- Files should be listed with `.gz` extension
-- SELECT should return complete, valid JSON data
-- JSON should contain `convertedDocument` with `metadata` and `content` fields
-
-### 4. Verify Local Cache
-
-Check files in the local cache directory:
+### Monitor Progress
 
 ```bash
-ls -lah /path/to/cache/directory/testunstructureddataproduct/
+# Check UnstructuredDataProduct status
+kubectl get unstructureddataproduct -n unstructured-controller-namespace
+
+# Check DocumentProcessor status
+kubectl get documentprocessor -n unstructured-controller-namespace
+
+# Check ChunksGenerator status
+kubectl get chunksgenerator -n unstructured-controller-namespace
+
+# View controller logs
+kubectl logs -f deployment/unstructured-data-controller -n unstructured-controller-namespace
 ```
 
-You should see:
-- `*.pdf` - Original files
-- `*.pdf-metadata.json` - File metadata
-- `*.pdf-converted.json` - Converted documents
+---
+
+## Configuration
+
+The `UnstructuredDataProduct` CR defines the complete pipeline:
+
+```yaml
+apiVersion: operator.dataverse.redhat.com/v1alpha1
+kind: UnstructuredDataProduct
+metadata:
+  name: testunstructureddataproduct
+spec:
+  # Where to read files from
+  sourceConfig:
+    type: s3
+    s3Config:
+      bucket: data-ingestion-bucket
+      prefix: testunstructureddataproduct
+  
+  # How to convert files
+  documentProcessorConfig:
+    type: docling
+    doclingConfig:
+      from_formats: [pdf, docx, md]
+      do_ocr: true
+  
+  # How to chunk content
+  chunksGeneratorConfig:
+    strategy: markdownTextSplitter
+    markdownSplitterConfig:
+      chunkSize: 1000
+      chunkOverlap: 200
+  
+  # Where to store results
+  destinationConfig:
+    type: snowflakeInternalStage
+    snowflakeInternalStageConfig:
+      database: SHIKHAR_TESTING
+      schema: TESTINGSCHEMA
+      stage: TESTINGSCHEMA_INTERNAL_STG
+```
+
+---
+
+## Expected Output
+
+After processing, each file produces:
+
+1. **Local Cache** (`/tmp/cache/testunstructureddataproduct/`):
+   - `file.pdf` - Original file
+   - `file.pdf-metadata.json` - File metadata
+   - `file.pdf-converted.json` - Converted Markdown
+   - `file.pdf-chunks.json` - Chunked content
+
+2. **Snowflake Stage** (`SHIKHAR_TESTING.TESTINGSCHEMA.TESTINGSCHEMA_INTERNAL_STG`):
+   - `testunstructureddataproduct/file.pdf-chunks.json` - Complete processed file with:
+     - `convertedDocument`: Original conversion with metadata
+     - `chunksDocument`: Chunked text ready for processing
+
+---
+
+## Troubleshooting
+
+**Files not processing?**
+```bash
+# Check controller logs
+kubectl logs -f <controller-pod> -n unstructured-controller-namespace
+
+# Check CR status
+kubectl describe unstructureddataproduct testunstructureddataproduct -n unstructured-controller-namespace
+```
+
+**Snowflake connection issues?**
+- Verify private key secret is correct
+- Check Snowflake role has proper permissions
+- Ensure ControllerConfig CR is healthy
+
+**Files stuck in pending?**
+- Check Docling service is running
+- Verify network connectivity
+- Check DocumentProcessor logs for errors
+
+---
+
+## Architecture
+
+Simple flow:
+```
+S3 Bucket → UnstructuredDataProduct Controller
+           ↓
+        DocumentProcessor (Docling)
+           ↓
+        ChunksGenerator (Langchain)
+           ↓
+        Snowflake Stage
+```
+
+That's it! The controller handles everything automatically once configured.
