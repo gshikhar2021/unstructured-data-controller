@@ -31,9 +31,7 @@ import (
 
 	operatorv1alpha1 "github.com/redhat-data-and-ai/unstructured-data-controller/api/v1alpha1"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/internal/controller/controllerutils"
-	"github.com/redhat-data-and-ai/unstructured-data-controller/internal/controller/sfclienthandler"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/filestore"
-	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/names"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/snowflake"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/unstructured"
 )
@@ -50,10 +48,9 @@ const (
 // UnstructuredDataProductReconciler reconciles a UnstructuredDataProduct object
 type UnstructuredDataProductReconciler struct {
 	client.Client
-	Scheme               *runtime.Scheme
-	fileStore            *filestore.FileStore
-	SnowflakeEnvironment string
-	sf                   *snowflake.Client
+	Scheme    *runtime.Scheme
+	fileStore *filestore.FileStore
+	sf        *snowflake.Client
 }
 
 // +kubebuilder:rbac:groups=operator.dataverse.redhat.com,namespace=unstructured-controller-namespace,resources=unstructureddataproducts,verbs=get;list;watch;create;update;patch;delete
@@ -71,18 +68,36 @@ func (r *UnstructuredDataProductReconciler) Reconcile(ctx context.Context, req c
 	}
 	dataProductName := unstructuredDataProductCR.Name
 
-	// set status to waiting
-	unstructuredDataProductCR.SetWaiting()
-	if err := r.Status().Update(ctx, unstructuredDataProductCR); err != nil {
+	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &operatorv1alpha1.UnstructuredDataProduct{}
+		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
+			return err
+		}
+		latest.SetWaiting()
+		return r.Status().Update(ctx, latest)
+	}); err != nil {
 		logger.Error(err, "failed to update UnstructuredDataProduct CR status")
 		return ctrl.Result{}, err
 	}
 
-	// Get the snowflake client
-	sf, err := sfclienthandler.SfClients.GetClientFor(r.SnowflakeEnvironment)
+	// get the controller config
+	controllerConfigCR := &operatorv1alpha1.ControllerConfig{}
+	if err := r.Get(ctx, client.ObjectKey{
+		Namespace: unstructuredDataProductCR.Namespace,
+		Name:      "controllerconfig",
+	}, controllerConfigCR); err != nil {
+		logger.Error(err, "failed to get ControllerConfig CR")
+		return ctrl.Result{}, err
+	}
+
+	accountName := controllerConfigCR.Spec.SnowflakeConfig.Account
+	roleName := controllerConfigCR.Spec.SnowflakeConfig.Role
+
+	// get the corresponding snowflake client
+	sf, err := snowflake.GetClient(accountName)
 	if err != nil {
-		logger.Error(err, "failed to get snowflake client for environment: "+r.SnowflakeEnvironment)
-		return r.handleError(ctx, unstructuredDataProductCR, err)
+		logger.Error(err, "failed to get snowflake client for account: "+accountName)
+		return ctrl.Result{}, err
 	}
 	r.sf = sf
 
@@ -171,22 +186,30 @@ func (r *UnstructuredDataProductReconciler) Reconcile(ctx context.Context, req c
 	}
 	logger.Info("successfully stored files to filestore", "files", storedFiles)
 
-	// now we may remove the force reconcile label as we have read all the files from the source and we are ready to accept more events
-	if err := controllerutils.RemoveForceReconcileLabel(ctx, r.Client, unstructuredDataProductCR); err != nil {
+	// // now we may remove the force reconcile label as we have read all the files from the source and we are ready to accept more events
+	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &operatorv1alpha1.UnstructuredDataProduct{}
+		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
+			return err
+		}
+		return controllerutils.RemoveForceReconcileLabel(ctx, r.Client, latest)
+	}); err != nil {
 		logger.Error(err, "failed to remove force reconcile label from UnstructuredDataProduct CR")
 		return r.handleError(ctx, unstructuredDataProductCR, err)
 	}
 
-	// fetch the DocumentProcessor CR
-	latestDocumentProcessorCR := &operatorv1alpha1.DocumentProcessor{}
-	if err := r.Get(ctx, client.ObjectKey{
+	// add force reconcile label to the DocumentProcessor CR
+	documentProcessorKey := client.ObjectKey{
 		Namespace: unstructuredDataProductCR.Namespace,
 		Name:      dataProductName,
-	}, latestDocumentProcessorCR); err != nil {
-		logger.Error(err, "failed to get DocumentProcessor CR")
-		return r.handleError(ctx, unstructuredDataProductCR, err)
 	}
-	if err := controllerutils.AddForceReconcileLabel(ctx, r.Client, latestDocumentProcessorCR); err != nil {
+	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latestDocumentProcessorCR := &operatorv1alpha1.DocumentProcessor{}
+		if err := r.Get(ctx, documentProcessorKey, latestDocumentProcessorCR); err != nil {
+			return err
+		}
+		return controllerutils.AddForceReconcileLabel(ctx, r.Client, latestDocumentProcessorCR)
+	}); err != nil {
 		logger.Error(err, "failed to add force reconcile label to DocumentProcessor CR")
 		return r.handleError(ctx, unstructuredDataProductCR, err)
 	}
@@ -195,19 +218,13 @@ func (r *UnstructuredDataProductReconciler) Reconcile(ctx context.Context, req c
 	var destination unstructured.Destination
 	switch unstructuredDataProductCR.Spec.DestinationConfig.Type {
 	case operatorv1alpha1.DestinationTypeInternalStage:
-		putSAName := names.ServiceAccountNameForToolEnv(
-			dataProductName,
-			snowflake.SnowpipeToolName,
-			r.SnowflakeEnvironment,
-		)
-		putSARole := names.ServiceAccountRole(putSAName)
 
 		destination = &unstructured.SnowflakeInternalStage{
-			Client:             sf,
-			ServiceAccountRole: putSARole,
-			Stage:              unstructuredDataProductCR.Spec.DestinationConfig.SnowflakeInternalStageConfig.Stage,
-			Database:           unstructuredDataProductCR.Spec.DestinationConfig.SnowflakeInternalStageConfig.Database,
-			Schema:             unstructuredDataProductCR.Spec.DestinationConfig.SnowflakeInternalStageConfig.Schema,
+			Client:   sf,
+			Role:     roleName,
+			Stage:    unstructuredDataProductCR.Spec.DestinationConfig.SnowflakeInternalStageConfig.Stage,
+			Database: unstructuredDataProductCR.Spec.DestinationConfig.SnowflakeInternalStageConfig.Database,
+			Schema:   unstructuredDataProductCR.Spec.DestinationConfig.SnowflakeInternalStageConfig.Schema,
 		}
 	default:
 		err := fmt.Errorf("unsupported destination type: %s", unstructuredDataProductCR.Spec.DestinationConfig.Type)
@@ -222,11 +239,11 @@ func (r *UnstructuredDataProductReconciler) Reconcile(ctx context.Context, req c
 		return r.handleError(ctx, unstructuredDataProductCR, err)
 	}
 	// extract the chunked files that are to be ingested to destination
-	filterFilePaths := unstructured.FilterConvertedFilePaths(filePaths)
-	logger.Info("files to ingest to destination", "files", filterFilePaths)
+	filterChunksFiles := unstructured.FilterChunksFilePaths(filePaths)
+	logger.Info("files to ingest to destination", "files", filterChunksFiles)
 
 	// ingest the chunks files to destination
-	if err := destination.SyncFilesToDestination(ctx, r.fileStore, filterFilePaths); err != nil {
+	if err := destination.SyncFilesToDestination(ctx, r.fileStore, filterChunksFiles); err != nil {
 		logger.Error(err, "failed to ingest chunks files to destination")
 		return r.handleError(ctx, unstructuredDataProductCR, err)
 	}

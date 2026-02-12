@@ -18,76 +18,76 @@ type Destination interface {
 }
 
 type SnowflakeInternalStage struct {
-	Client             *snowflake.Client
-	ServiceAccountRole string
-	Database           string
-	Schema             string
-	Stage              string
+	Client   *snowflake.Client
+	Role     string
+	Database string
+	Schema   string
+	Stage    string
 }
 
 func (d *SnowflakeInternalStage) SyncFilesToDestination(ctx context.Context,
-	fs *filestore.FileStore, convertedFilePaths []string) error {
+	fs *filestore.FileStore, chunksFilePaths []string) error {
 	logger := log.FromContext(ctx)
-	logger.Info("ingesting data to snowflake internal stage", "filePaths", convertedFilePaths)
+	logger.Info("ingesting data to snowflake internal stage", "filePaths", chunksFilePaths)
 
 	// get file name and uid for all files in the stage
 	type row struct {
 		Data string `db:"data"`
 	}
 	rows := []row{}
-	err := d.Client.GetDataFromStage(ctx, d.ServiceAccountRole, d.Schema, d.Stage, &rows)
+	err := d.Client.GetDataFromStage(ctx, d.Role, d.Database, d.Schema, d.Stage, &rows)
 	if err != nil {
 		return err
 	}
 
 	// map of raw file path to chunks file
-	convertedFilesInStage := make(map[string]ConvertedFile)
-	convertedFilesList := []string{}
+	chunksFilesInStage := make(map[string]ChunksFile)
+	chunkFilesList := []string{}
 	for _, row := range rows {
-		convertedFile := ConvertedFile{}
-		err := json.Unmarshal([]byte(row.Data), &convertedFile)
+		chunksFile := ChunksFile{}
+		err := json.Unmarshal([]byte(row.Data), &chunksFile)
 		if err != nil {
 			return err
 		}
-		if convertedFile.ConvertedDocument.Metadata != nil && convertedFile.ConvertedDocument.Metadata.RawFilePath != "" {
-			convertedFilesInStage[convertedFile.ConvertedDocument.Metadata.RawFilePath] = convertedFile
-			convertedFilesList = append(convertedFilesList, convertedFile.ConvertedDocument.Metadata.RawFilePath)
+		if chunksFile.ConvertedDocument != nil &&
+			chunksFile.ConvertedDocument.Metadata != nil &&
+			chunksFile.ConvertedDocument.Metadata.RawFilePath != "" {
+			chunksFilesInStage[chunksFile.ConvertedDocument.Metadata.RawFilePath] = chunksFile
+			chunkFilesList = append(chunkFilesList, chunksFile.ConvertedDocument.Metadata.RawFilePath)
 		}
 	}
 
-	logger.Info("files currently in the snowflake internal stage", "files", convertedFilesList)
-	logger.Info("list of files in the local file store to be stored", "files", convertedFilePaths)
+	logger.Info("files currently in the snowflake internal stage", "files", chunkFilesList)
+	logger.Info("list of files in the local file store to be stored", "files", chunksFilePaths)
 	errorList := []error{}
-	for _, convertedFilePathInFilestore := range convertedFilePaths {
+	for _, chunksFilePathInFilestore := range chunksFilePaths {
 		// read the file from filestore
-		convertedFileBytesInFilestore, err := fs.Retrieve(ctx, convertedFilePathInFilestore)
+		chunksFileBytesInFilestore, err := fs.Retrieve(ctx, chunksFilePathInFilestore)
 		if err != nil {
-			logger.Error(err, "failed to retrieve file from filestore", "file", convertedFilePathInFilestore)
+			logger.Error(err, "failed to retrieve file from filestore", "file", chunksFilePathInFilestore)
 			errorList = append(errorList, err)
-			continue
 		}
 
-		convertedFileInFilestore := ConvertedFile{}
-		err = json.Unmarshal(convertedFileBytesInFilestore, &convertedFileInFilestore)
+		chunksFileInFilestore := ChunksFile{}
+		err = json.Unmarshal(chunksFileBytesInFilestore, &chunksFileInFilestore)
 		if err != nil {
-			logger.Error(err, "failed to unmarshal file", "file", convertedFilePathInFilestore)
+			logger.Error(err, "failed to unmarshal file", "file", chunksFilePathInFilestore)
 			errorList = append(errorList, err)
 			continue
 		}
 
 		// check if chunks file already exists in the stage
-		if _, exists := convertedFilesInStage[convertedFileInFilestore.ConvertedDocument.Metadata.RawFilePath]; exists {
-			logger.Info("file already exists in the stage", "file",
-				convertedFileInFilestore.ConvertedDocument.Metadata.RawFilePath)
+		if _, exists := chunksFilesInStage[chunksFileInFilestore.ConvertedDocument.Metadata.RawFilePath]; exists {
+			logger.Info("file already exists in the stage", "file", chunksFileInFilestore.ConvertedDocument.Metadata.RawFilePath)
 
-			convertedFileInStage := convertedFilesInStage[convertedFileInFilestore.ConvertedDocument.Metadata.RawFilePath]
+			chunksFileInStage := chunksFilesInStage[chunksFileInFilestore.ConvertedDocument.Metadata.RawFilePath]
 
 			// delete the file from the map as we will use this map to delete extra files from the stage
-			delete(convertedFilesInStage, convertedFileInFilestore.ConvertedDocument.Metadata.RawFilePath)
+			delete(chunksFilesInStage, chunksFileInFilestore.ConvertedDocument.Metadata.RawFilePath)
 
-			if convertedFileInStage.ConvertedDocument.Metadata.Equal(convertedFileInFilestore.ConvertedDocument.Metadata) {
+			if chunksFileInStage.ChunksDocument.Metadata.Equal(chunksFileInFilestore.ChunksDocument.Metadata) {
 				logger.Info("file is already in the stage and the configuration is the same, skipping ...",
-					"file", convertedFileInFilestore.ConvertedDocument.Metadata.RawFilePath)
+					"file", chunksFileInFilestore.ConvertedDocument.Metadata.RawFilePath)
 				// nothing to do, file is already in the stage
 				continue
 			}
@@ -96,31 +96,37 @@ func (d *SnowflakeInternalStage) SyncFilesToDestination(ctx context.Context,
 		// upload the file to the stage
 
 		// this is needed to pass the file stream to the snowflake client without creating a local temporary file
-		streamCtx := gosnowflake.WithFileStream(ctx, bytes.NewReader(convertedFileBytesInFilestore))
+		streamCtx := gosnowflake.WithFileStream(ctx, bytes.NewReader(chunksFileBytesInFilestore))
 
 		fileRows := []snowflake.UploadedFileStatus{}
 
 		if err := d.Client.Put(streamCtx,
-			d.ServiceAccountRole,
+			d.Role,
 			// this file path does not matter as we are using the stream context to pass the file stream to the snowflake client
-			convertedFilePathInFilestore,
+			chunksFilePathInFilestore,
+			// database name is the database name
+			d.Database,
 			// schema name is the data product name
 			d.Schema,
 			// stage name is the internal stage name
 			d.Stage,
 			// subpath is the file name
-			convertedFilePathInFilestore,
+			chunksFilePathInFilestore,
 			&fileRows); err != nil {
-			logger.Error(err, "failed to upload file to snowflake internal stage", "file", convertedFilePathInFilestore)
+			logger.Error(err, "failed to upload file to snowflake internal stage", "file", chunksFilePathInFilestore)
 			errorList = append(errorList, err)
 			continue
 		}
-		logger.Info("successfully uploaded file to snowflake internal stage", "file", convertedFilePathInFilestore)
+		logger.Info("successfully uploaded file to snowflake internal stage",
+			"file", chunksFileInFilestore.ConvertedDocument.Metadata.RawFilePath)
 
 		if len(fileRows) == 0 {
-			err := fmt.Errorf("no file rows returned while uploading file: %s", convertedFilePathInFilestore)
-			logger.Error(err, "file", convertedFilePathInFilestore)
-			errorList = append(errorList, err)
+			logger.Error(fmt.Errorf("no file rows returned while uploading file to snowflake internal stage: %s",
+				chunksFileInFilestore.ConvertedDocument.Metadata.RawFilePath),
+				"file", chunksFileInFilestore.ConvertedDocument.Metadata.RawFilePath)
+			errorList = append(errorList,
+				fmt.Errorf("no file rows returned while uploading file to snowflake internal stage: %s",
+					chunksFileInFilestore.ConvertedDocument.Metadata.RawFilePath))
 			continue
 		}
 	}
@@ -129,12 +135,12 @@ func (d *SnowflakeInternalStage) SyncFilesToDestination(ctx context.Context,
 	// at this point, whatever is left in the filesInStage map are the extra files that need to be deleted
 
 	extraFiles := []string{}
-	for extraFilePath := range convertedFilesInStage {
+	for extraFilePath := range chunksFilesInStage {
 		logger.Info("found extra file in the stage, marking for deletion", "file", extraFilePath)
 		extraFiles = append(extraFiles, extraFilePath)
 	}
 
-	if err := d.Client.DeleteFilesFromStage(ctx, d.ServiceAccountRole, d.Schema, d.Stage, extraFiles); err != nil {
+	if err := d.Client.DeleteFilesFromStage(ctx, d.Role, d.Database, d.Schema, d.Stage, extraFiles); err != nil {
 		logger.Error(err, "failed to delete extra files from snowflake internal stage")
 		errorList = append(errorList, err)
 	}

@@ -6,12 +6,12 @@ import (
 )
 
 // Put facilitates uploading files to the internal stage resource
-func (c *Client) Put(ctx context.Context, svcRoleName, filePath,
+func (c *Client) Put(ctx context.Context, roleName, filePath, databaseName,
 	schemaName, stageName, subpath string, resources any) error {
 	putQuery :=
 		fmt.Sprintf("PUT 'file://%s' '@%s.%s.%s/%s' OVERWRITE = TRUE;", filePath,
-			SnowpipeDatabaseName, schemaName, stageName, subpath)
-	rows, err := c.query(ctx, putQuery, svcRoleName)
+			databaseName, schemaName, stageName, subpath)
+	rows, err := c.query(ctx, putQuery, roleName)
 	if err != nil {
 		return err
 	}
@@ -21,10 +21,10 @@ func (c *Client) Put(ctx context.Context, svcRoleName, filePath,
 	return scanRows(rows, resources)
 }
 
-func (c *Client) GetDataFromStage(ctx context.Context, svcRoleName,
+func (c *Client) GetDataFromStage(ctx context.Context, roleName, databaseName,
 	schemaName, stageName string, resources any) error {
-	query := fmt.Sprintf("SELECT $1 AS data FROM @%s.%s.%s;", SnowpipeDatabaseName, schemaName, stageName)
-	rows, err := c.query(ctx, query, svcRoleName)
+	query := fmt.Sprintf("SELECT $1 AS data FROM @%s.%s.%s;", databaseName, schemaName, stageName)
+	rows, err := c.query(ctx, query, roleName)
 	if err != nil {
 		return err
 	}
@@ -35,12 +35,12 @@ func (c *Client) GetDataFromStage(ctx context.Context, svcRoleName,
 }
 
 func (c *Client) DeleteFilesFromStage(ctx context.Context,
-	svcRoleName, schemaName, stageName string, files []string) error {
-	queries := []string{}
+	roleName, databaseName, schemaName, stageName string, files []string) error {
+	queries := make([]string, 0, len(files))
 	for _, file := range files {
-		queries = append(queries, fmt.Sprintf("REMOVE '@%s.%s.%s/%s';", SnowpipeDatabaseName, schemaName, stageName, file))
+		queries = append(queries, fmt.Sprintf("REMOVE '@%s.%s.%s/%s';", databaseName, schemaName, stageName, file))
 	}
-	if err := c.executeBatch(ctx, queries, svcRoleName); err != nil {
+	if err := c.executeBatch(ctx, queries, roleName); err != nil {
 		return fmt.Errorf("error deleting files from stage: %w", err)
 	}
 	return nil

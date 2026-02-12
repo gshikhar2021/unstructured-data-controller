@@ -19,8 +19,8 @@ package controller
 import (
 	"context"
 	"crypto/rsa"
-	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -33,7 +33,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"github.com/redhat-data-and-ai/unstructured-data-controller/internal/controller/controllerutils"
-	"github.com/redhat-data-and-ai/unstructured-data-controller/internal/controller/sfclienthandler"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/awsclienthandler"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/docling"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/langchain"
@@ -134,11 +133,19 @@ func (r *ControllerConfigReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		snowflakeConfig := config.Spec.SnowflakeConfig
 		snowflakeClientConfig, result, err := r.getSnowflakeConfigFromCR(ctx, req.Namespace, snowflakeConfig)
 		if err != nil {
-			return result, nil
+			return result, err
+		}
+
+		if snowflakeClientConfig == nil {
+			logger.Info("waiting for snowflake secret to be created, will retry in 10 seconds...")
+			return ctrl.Result{
+				Requeue:      true,
+				RequeueAfter: 10 * time.Second,
+			}, nil
 		}
 
 		logger.Info("creating snowflake client and validating if snowflake connection is healthy for " + snowflakeConfig.Name)
-		sfClient, err := r.createAndValidateSfClient(ctx, *snowflakeClientConfig)
+		_, err = r.createAndValidateSfClient(ctx, *snowflakeClientConfig)
 		if err != nil {
 			logger.Error(err, "failed to ping snowflake for "+snowflakeConfig.Name+". re-attempting to ping snowflake in 10 seconds")
 			config.UpdateStatus(err)
@@ -152,27 +159,8 @@ func (r *ControllerConfigReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			}, nil
 		}
 
-		sfclienthandler.SfClients[snowflakeConfig.Name] = &sfclienthandler.SnowflakeClientDetails{
-			Client: sfClient,
-		}
-
 		logger.Info("snowflake connection is healthy for " + snowflakeConfig.Name)
 		logger.Info("Snowflake client created and connection validated ...")
-
-		// TODO: add in the controller where used
-		// // create IAM client
-		// _, err = awsclienthandler.NewIAMClientFromConfig(ctx, &awsConfig)
-		// if err != nil {
-		// 	return ctrl.Result{}, err
-		// }
-		// logger.Info("IAM client created ...")
-
-		// // create KMS client
-		// _, err = awsclienthandler.NewKMSClientFromConfig(ctx, &awsConfig)
-		// if err != nil {
-		// 	return ctrl.Result{}, err
-		// }
-		// logger.Info("KMS client created ...")
 	}
 
 	ingestionBucket = config.Spec.UnstructuredDataProcessingConfig.IngestionBucket
@@ -229,13 +217,15 @@ func (r *ControllerConfigReconciler) getSnowflakeConfigFromCR(ctx context.Contex
 	if cfg.PrivateKeySecret != "" {
 		privateKey, err := r.fetchPrivateKeyFromSecret(ctx, cfg.PrivateKeySecret, namespace)
 		if err != nil {
-			logger.Error(err, "failed to fetch private key from secret")
-			if errors.Is(err, errors.New("secret not found")) {
+			if strings.Contains(err.Error(), "secret not found") {
+				logger.Info(fmt.Sprintf("waiting for secret %s to be created, will retry in 10 seconds...", cfg.PrivateKeySecret))
 				return nil, ctrl.Result{
 					Requeue:      true,
 					RequeueAfter: 10 * time.Second,
 				}, nil
 			}
+			// For other errors, log as ERROR
+			logger.Error(err, fmt.Sprintf("failed to fetch private key from secret for %s", cfg.PrivateKeySecret))
 			return nil, ctrl.Result{}, err
 		}
 		snowflakeClientConfig.PrivateKey = privateKey
@@ -249,8 +239,7 @@ func (r *ControllerConfigReconciler) fetchPrivateKeyFromSecret(ctx context.Conte
 	secret := &corev1.Secret{}
 	if err := r.Get(ctx,
 		types.NamespacedName{Name: privateKeyName, Namespace: namespace}, secret); err != nil {
-		logger.Error(err, fmt.Sprintf("error fetching secret %s, retrying in 10 seconds", privateKeyName))
-		return nil, errors.New("secret not found")
+		return nil, fmt.Errorf("secret not found for %s: %w", privateKeyName, err)
 	}
 	privateKeyData := secret.Data["privateKey"]
 	if len(privateKeyData) == 0 {
@@ -258,11 +247,11 @@ func (r *ControllerConfigReconciler) fetchPrivateKeyFromSecret(ctx context.Conte
 	}
 	privateKeyInterface, err := keyutil.ParsePrivateKeyPEM(privateKeyData)
 	if err != nil {
-		return nil, errors.New("unable to parse the privateKey")
+		return nil, fmt.Errorf("failed to parse private key from secret %s: %w", privateKeyName, err)
 	}
 	privateKey, ok := privateKeyInterface.(*rsa.PrivateKey)
 	if !ok {
-		return nil, errors.New("privateKey is not a valid RSA key")
+		return nil, fmt.Errorf("private key in secret %s is not an RSA private key", privateKeyName)
 	}
 	return privateKey, nil
 }

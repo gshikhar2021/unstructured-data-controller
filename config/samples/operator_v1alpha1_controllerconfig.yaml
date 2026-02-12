@@ -8,18 +8,18 @@ metadata:
 spec:
   awsSecret: aws-secret
   snowflakeConfig:
-    name: rhplatformtest
-    account: "gdadclc-rhplatformtest"
+    name: "test"
+    account: "gdadclc-test"
     user: "shikgupt"
-    role: "accountadmin"
+    role: "TESTING_ROLE"
     region: "us-west-2"
     warehouse: "default"
     defaultDatabase: "DB_DICE"
     privateKeySecret: rhplatformtest-private-key
   unstructuredDataProcessingConfig:
-    doclingServeURL: "http://localhost:5001"
+    doclingServeURL: "http://localhost:5002"
     ingestionBucket: "data-ingestion-bucket"
     dataStorageBucket: "data-storage-bucket"
-    cacheDirectory: "/Users/shikgupt/Unstructured-Data-Initiative/unstructured-data-controller/tmp/cache/"
+    cacheDirectory: "/tmp/cache/"
     maxConcurrentDoclingTasks: 5
     maxConcurrentLangchainTasks: 10
