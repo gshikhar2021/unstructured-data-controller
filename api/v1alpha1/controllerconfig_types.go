@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	ConfigCondition = "ConfigReady"
+	ConfigCondition = "ConfigReadys"
 )
 
 // ControllerConfigSpec defines the desired state of ControllerConfig.
