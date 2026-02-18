@@ -17,7 +17,6 @@ spec:
         component: docling-serve-api
     spec:
       restartPolicy: Always
-      serviceAccountName: pipeline
       containers:
         - name: api
           image: ghcr.io/docling-project/docling-serve-cpu:v1.2.0

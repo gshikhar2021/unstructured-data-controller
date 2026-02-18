@@ -388,8 +388,6 @@ github.com/google/go-cmp/cmp/internal/diff
 github.com/google/go-cmp/cmp/internal/flags
 github.com/google/go-cmp/cmp/internal/function
 github.com/google/go-cmp/cmp/internal/value
-# github.com/google/pprof v0.0.0-20250403155104-27863c87afa6
-## explicit; go 1.23
 # github.com/google/uuid v1.6.0
 ## explicit
 github.com/google/uuid
@@ -465,6 +463,10 @@ github.com/munnerz/goautoneg
 # github.com/mxk/go-flowrate v0.0.0-20140419014527-cca7078d478f
 ## explicit
 github.com/mxk/go-flowrate/flowrate
+# github.com/onsi/ginkgo/v2 v2.27.2
+## explicit; go 1.23.0
+# github.com/onsi/gomega v1.38.2
+## explicit; go 1.23.0
 # github.com/pierrec/lz4/v4 v4.1.22
 ## explicit; go 1.14
 github.com/pierrec/lz4/v4
@@ -524,13 +526,15 @@ github.com/stoewer/go-strcase
 github.com/tmc/langchaingo/llms
 github.com/tmc/langchaingo/schema
 github.com/tmc/langchaingo/textsplitter
-# github.com/vladimirvivien/gexe v0.2.0
-## explicit; go 1.16
+# github.com/vladimirvivien/gexe v0.4.1
+## explicit; go 1.23
 github.com/vladimirvivien/gexe
 github.com/vladimirvivien/gexe/exec
 github.com/vladimirvivien/gexe/fs
 github.com/vladimirvivien/gexe/http
+github.com/vladimirvivien/gexe/net
 github.com/vladimirvivien/gexe/prog
+github.com/vladimirvivien/gexe/str
 github.com/vladimirvivien/gexe/vars
 # github.com/x448/float16 v0.8.4
 ## explicit; go 1.11

@@ -12,8 +12,6 @@ spec:
       labels:
         app: localstack
     spec:
-      # using the pipeline service account to get the anyuid SCC, lol
-      serviceAccountName: pipeline
       containers:
       - image: localstack/localstack
         name: localstack

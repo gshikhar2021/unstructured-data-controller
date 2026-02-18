@@ -46,15 +46,15 @@ var (
 
 const (
 	testNamespace       = "unstructured-controller-namespace"
-	deploymentName      = "unstructured-data-controller-controller-manager"
-	snowflakeSecretName = "snowflake-private-key"
+	deploymentName      = "unstructured-controller-manager"
+	snowflakeSecretName = "private-key"
 )
 
 func TestMain(m *testing.M) {
 	testenv = env.New()
 	runningProcesses := []exec.Cmd{}
 
-	kindClusterName = fmt.Sprintf("test-cluster-%d", time.Now().UnixNano())
+	kindClusterName = os.Getenv("KIND_CLUSTER")
 	skipClusterSetup := os.Getenv("SKIP_CLUSTER_SETUP")
 	skipClusterCleanup := os.Getenv("SKIP_CLUSTER_CLEANUP")
 	cleanupRequired := os.Getenv("SKIP_TEST_CLEANUP") != "true"
@@ -129,35 +129,51 @@ func testSetup(ctx context.Context, runningProcesses *[]exec.Cmd, config *envcon
 	log.Println("Deploying operator with CRDs installed...")
 	deployCommand := fmt.Sprintf("make IMG=%s deploy", image)
 	if p := utils.RunCommand(deployCommand); p.Err() != nil {
-		log.Printf("Failed to deploy operator: %s: %s", p.Err(), p.Result())
+		log.Printf("Failed to deploy operator: %s", p.Err())
+		log.Printf("Command output: %s", p.Result())
+		log.Printf("Command stdout: %s", p.Stdout())
+		log.Printf("Command stderr: %s", p.Out())
 		return p.Err()
 	}
+
+	log.Println("Verifying deployment exists...")
+	checkCmd := fmt.Sprintf("kubectl get deployment %s -n %s", deploymentName, testNamespace)
+	if p := utils.RunCommand(checkCmd); p.Err() != nil {
+		log.Printf("Deployment not found: %s", p.Err())
+		return p.Err()
+	}
+	log.Printf("Deployment %s found in namespace %s", deploymentName, testNamespace)
 
 	log.Println("Patching controller-manager to add cache directory volume...")
 	patchCommand := fmt.Sprintf(`kubectl patch deployment %s -n %s --type=json -p '[
 	{
-		"op": "add",
-		"path": "/spec/template/spec/volumes/-",
-		"value": 
-		{
-			"name": "cache-volume",
-			"emptyDir": {}
-		}
+		"op": "replace",
+		"path": "/spec/template/spec/volumes",
+		"value": [
+			{
+				"name": "cache-volume",
+				"emptyDir": {}
+			}
+		]
 	},
 	{
-		"op": "add",
-		"path": "/spec/template/spec/containers/0/volumeMounts/-",
-		"value": {
-			"name": "cache-volume",
-			"mountPath": "/tmp/cache"
-		}
+		"op": "replace",
+		"path": "/spec/template/spec/containers/0/volumeMounts",
+		"value": [
+			{
+				"name": "cache-volume",
+				"mountPath": "/tmp/cache"
+			}
+		]
 	}
 	]'`, deploymentName, testNamespace)
 
 	if p := utils.RunCommand(patchCommand); p.Err() != nil {
-		log.Printf("Failed to patch deployment: %s: %s", p.Err(), p.Result())
+		log.Printf("Failed to patch deployment: %s", p.Err())
+		log.Printf("Command output: %s", p.Result())
 		return p.Err()
 	}
+	log.Println("Successfully patched deployment with cache volume")
 
 	log.Println("Waiting for controller-manager deployment to be available...")
 	client := config.Client()
@@ -189,12 +205,22 @@ func testSetup(ctx context.Context, runningProcesses *[]exec.Cmd, config *envcon
 	if secretFile == "" {
 		return fmt.Errorf("SNOWFLAKE_SECRET_FILE environment variable is required for snowflake secret")
 	}
+
+	// Verify file exists
+	if _, err := os.Stat(secretFile); err != nil {
+		log.Printf("Secret file does not exist or cannot be accessed: %s", err)
+		return fmt.Errorf("secret file not found: %s", secretFile)
+	}
+
 	secretCreateCmd := fmt.Sprintf("kubectl create secret generic %s -n %s --from-file=privateKey=%s",
 		snowflakeSecretName, testNamespace, secretFile)
+	log.Println("Running command to create snowflake secret...")
 	if p := utils.RunCommand(secretCreateCmd); p.Err() != nil {
-		log.Printf("Failed to create snowflake secret: %s %s", p.Err(), p.Result())
+		log.Printf("Failed to create snowflake secret: %s", p.Err())
+		log.Printf("Command output: %s", p.Result())
 		return p.Err()
 	}
+	log.Println("Snowflake secret created successfully")
 
 	log.Println("Creating aws-secret from config/samples/aws-secret.yaml")
 	if p := utils.RunCommand(fmt.Sprintf("kubectl apply -n %s -f config/samples/aws-secret.yaml", testNamespace)); p.Err() != nil {
@@ -206,9 +232,11 @@ func testSetup(ctx context.Context, runningProcesses *[]exec.Cmd, config *envcon
 	if skipLocalstack != "true" {
 		log.Println("Deploying localstack...")
 		if p := utils.RunCommand(fmt.Sprintf("kubectl apply -n %s -f test/localstack/", testNamespace)); p.Err() != nil {
-			log.Printf("Failed to deploy localstack: %s %s", p.Err(), p.Result())
+			log.Printf("Failed to deploy localstack: %s", p.Err())
 			return p.Err()
 		}
+		log.Println("Checking localstack deployment status...")
+		utils.RunCommand(fmt.Sprintf("kubectl get pods -n %s -l app=localstack", testNamespace))
 		log.Println("Waiting for localstack to be ready...")
 		if err := wait.For(
 			conditions.New(client.Resources()).DeploymentAvailable("localstack", testNamespace),
@@ -216,6 +244,10 @@ func testSetup(ctx context.Context, runningProcesses *[]exec.Cmd, config *envcon
 			wait.WithInterval(5*time.Second),
 		); err != nil {
 			log.Printf("Timed out waiting for localstack: %s", err)
+			log.Println("Checking localstack pod logs...")
+			utils.RunCommand(fmt.Sprintf("kubectl describe deployment localstack -n %s", testNamespace))
+			utils.RunCommand(fmt.Sprintf("kubectl get pods -n %s -l app=localstack", testNamespace))
+			utils.RunCommand(fmt.Sprintf("kubectl logs -n %s -l app=localstack --tail=50", testNamespace))
 			return err
 		}
 		log.Println("Port-forwarding localstack to localhost:4566")
@@ -285,13 +317,13 @@ func getControllerConfigResource() *v1alpha1.ControllerConfig {
 	role := os.Getenv("ROLE")
 	warehouse := os.Getenv("WAREHOUSE")
 	if account == "" {
-		account = "gdadclc-rhplatformtest"
+		account = "account-identifier"
 	}
 	if user == "" {
-		user = "shikgupt"
+		user = "username"
 	}
 	if role == "" {
-		role = "accountadmin"
+		role = "role"
 	}
 	if warehouse == "" {
 		warehouse = "DEFAULT"
@@ -324,11 +356,9 @@ func getControllerConfigResource() *v1alpha1.ControllerConfig {
 	}
 }
 
-func testCleanup(ctx context.Context, cfg *envconf.Config, runningProcesses *[]exec.Cmd) error {
+func testCleanup(_ context.Context, _ *envconf.Config, runningProcesses *[]exec.Cmd) error {
 	log.Println("cleaning up test environment ...")
 	errorList := []error{}
-
-	cleanupResources(ctx, cfg, testNamespace)
 
 	commandList := []string{
 		"make undeploy ignore-not-found=true",
@@ -354,30 +384,4 @@ func testCleanup(ctx context.Context, cfg *envconf.Config, runningProcesses *[]e
 		return fmt.Errorf("failed to cleanup test environment: %v", errorList)
 	}
 	return nil
-}
-
-// cleanupResources performs cleanup of all CRs used in e2e tests before operator deletion to prevent orphaned resources and namespace cleanup issues
-func cleanupResources(ctx context.Context, cfg *envconf.Config, namespace string) (context.Context, error) {
-	log.Println("Cleaning up all remaining CRs before operator deletion...")
-
-	// Delete all CRs used in e2e tests with timeout to prevent orphaned resources
-	log.Println("Deleting all resources from the namespace...")
-	utils.RunCommand(fmt.Sprintf(`kubectl api-resources --verbs=list --namespaced -o name | grep operator.dataverse.redhat.com | xargs -n 1 kubectl delete --all --ignore-not-found -n %s --timeout=60s`, namespace))
-
-	// Verify cleanup completion and log remaining CRs
-	log.Println("Verifying CR cleanup completion...")
-	p := utils.RunCommand(fmt.Sprintf(`kubectl api-resources --verbs=list --namespaced -o name | grep operator.dataverse.redhat.com | xargs -n 1 kubectl get --ignore-not-found -n %s 2>/dev/null || echo "All CRs successfully deleted"`, namespace))
-
-	if p.Err() != nil {
-		log.Printf("Verification command failed: %s", p.Err())
-	} else {
-		output := p.Result()
-		if output == "All CRs successfully deleted" {
-			log.Println("All CRs successfully deleted")
-		} else {
-			log.Printf("Remaining CRs found, you need to delete them manually from the cluster:\n%s", output)
-		}
-	}
-
-	return ctx, nil
 }
