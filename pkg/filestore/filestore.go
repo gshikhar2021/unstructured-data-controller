@@ -308,3 +308,8 @@ func (fs *FileStore) unlockFile(localPath, s3Path string) {
 	fs.unlockLocalFile(localPath)
 	fs.unlockS3File(s3Path)
 }
+
+// S3Bucket returns the S3 bucket name used by the filestore
+func (fs *FileStore) S3Bucket() string {
+	return fs.s3Bucket
+}
