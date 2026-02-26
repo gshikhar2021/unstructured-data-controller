@@ -34,12 +34,14 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          flavor: |
+            latest=false
           tags: |
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=ref,event=branch,enable=${{ startsWith(github.ref, 'refs/heads/release-') }}
             type=ref,event=pr
             type=ref,event=tag
-            type=sha
+            type=sha,enable=${{ github.ref_type != 'tag' && !startsWith(github.ref, 'refs/heads/release-') }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
