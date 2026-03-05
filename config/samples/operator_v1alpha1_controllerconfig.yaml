@@ -10,15 +10,15 @@ spec:
   snowflakeConfig:
     name: "testing"
     account: "account-identifier"
-    user: "SNOWFLAKE_USER"
+    user: "username"
     role: "TESTING_ROLE"
     region: "us-west-2"
     warehouse: "default"
-    privateKeySecret: rhplatformtest-private-key
+    privateKeySecret: private-key
   unstructuredDataProcessingConfig:
-    doclingServeURL: "http://localhost:5002"
+    doclingServeURL: "http://docling-serve:5001"
     ingestionBucket: "data-ingestion-bucket"
     dataStorageBucket: "data-storage-bucket"
-    cacheDirectory: "/tmp/cache/"
+    cacheDirectory: "/data/cache"
     maxConcurrentDoclingTasks: 5
     maxConcurrentLangchainTasks: 10

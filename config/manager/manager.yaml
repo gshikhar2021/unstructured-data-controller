@@ -63,8 +63,14 @@ spec:
         args:
         - --leader-elect
         - --health-probe-bind-address=:8081
+        - --watch-namespace=$(WATCH_NAMESPACE)
         image: controller:latest
         name: manager
+        env:
+        - name: WATCH_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
         ports: []
         securityContext:
           allowPrivilegeEscalation: false
@@ -92,14 +98,12 @@ spec:
           requests:
             cpu: 10m
             memory: 64Mi
-        volumeMounts: [
+        volumeMounts:
           - name: unstructured-datastore-cache-storage
             mountPath: /data/cache
-        ]
-      volumes: [
+      volumes:
         - name: unstructured-datastore-cache-storage
           persistentVolumeClaim:
             claimName: unstructured-datastore-cache
-      ]
       serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10
