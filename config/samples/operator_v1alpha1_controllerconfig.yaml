@@ -19,6 +19,6 @@ spec:
     doclingServeURL: "http://docling-serve:5001"
     ingestionBucket: "data-ingestion-bucket"
     dataStorageBucket: "data-storage-bucket"
-    cacheDirectory: "/data/cache"
+    cacheDirectory: "data/cache"
     maxConcurrentDoclingTasks: 5
     maxConcurrentLangchainTasks: 10
