@@ -135,7 +135,7 @@ func (r *ChunksGeneratorReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	var chunked bool
 	for _, convertedFilePath := range convertedFilePaths {
 		logger.Info("processing converted file", "file", convertedFilePath)
-		chunked, err = r.processConvertedFile(ctx, convertedFilePath, chunksGeneratorCR)
+		fileChunked, err := r.processConvertedFile(ctx, convertedFilePath, chunksGeneratorCR)
 		if err != nil {
 			if strings.Contains(err.Error(), langchain.SemaphoreAcquireError) {
 				logger.Error(err, "failed to process converted file, semaphore acquire error, will try again later", "file", convertedFilePath)
@@ -145,6 +145,9 @@ func (r *ChunksGeneratorReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			chunkingErrors = append(chunkingErrors, err)
 			logger.Error(err, "failed to process converted file", "file", convertedFilePath)
 			continue
+		}
+		if fileChunked {
+			chunked = true
 		}
 		logger.Info("successfully processed converted file", "file", convertedFilePath)
 	}
