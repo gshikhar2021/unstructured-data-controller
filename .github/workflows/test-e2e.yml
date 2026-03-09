@@ -8,6 +8,7 @@ jobs:
   test-e2e:
     name: Run on Ubuntu
     runs-on: ubuntu-latest
+    environment: test
     steps:
       - uses: actions/checkout@v5
         name: checkout the code
