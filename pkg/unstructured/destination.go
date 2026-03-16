@@ -78,7 +78,8 @@ func (d *SnowflakeInternalStage) SyncFilesToDestination(ctx context.Context,
 
 		// check if embeddings file already exists in the stage
 		if _, exists := embeddingsFilesInStage[embeddingsFileInFilestore.ConvertedDocument.Metadata.RawFilePath]; exists {
-			logger.Info("file already exists in the stage", "file", embeddingsFileInFilestore.ConvertedDocument.Metadata.RawFilePath)
+			logger.Info("file already exists in the stage",
+				"file", embeddingsFileInFilestore.ConvertedDocument.Metadata.RawFilePath)
 
 			embeddingsFileInStage := embeddingsFilesInStage[embeddingsFileInFilestore.ConvertedDocument.Metadata.RawFilePath]
 

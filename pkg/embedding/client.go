@@ -101,7 +101,7 @@ func NewSelfHostedModelClient(config *SelfHostedModelConfig) (*SelfHostedModelCl
 	}, nil
 }
 
-func NewGeminiModelClient(config *GeminiModelConfig) (*GeminiModelClient, error) {
+func NewGeminiModelClient(_ *GeminiModelConfig) (*GeminiModelClient, error) {
 	return nil, nil
 }
 
@@ -131,7 +131,7 @@ func createHTTPClient(certPath string) (*http.Client, error) {
 }
 
 func (c *SelfHostedModelClient) GenerateEmbeddings(ctx context.Context,
-	texts []string, apiKeySecret *corev1.Secret) (*EmbeddingResult, error) {
+	texts []string, unstructuredSecret *corev1.Secret) (*EmbeddingResult, error) {
 	logger := log.FromContext(ctx)
 
 	if len(texts) == 0 {
@@ -148,23 +148,23 @@ func (c *SelfHostedModelClient) GenerateEmbeddings(ctx context.Context,
 	}
 
 	// Validate that secret and APIKeySecretRef are provided
-	if apiKeySecret == nil {
-		return nil, fmt.Errorf("apiKeySecret cannot be nil")
+	if unstructuredSecret == nil {
+		return nil, errors.New("unstructuredSecret cannot be nil")
 	}
 	if c.Config.APIKeySecretRef == "" {
-		return nil, fmt.Errorf("APIKeySecretRef must be specified")
+		return nil, errors.New("APIKeySecretRef must be specified")
 	}
 
 	// Fetch API key from secret using APIKeySecretRef as the key
-	apiKeyBytes, exists := apiKeySecret.Data[c.Config.APIKeySecretRef]
+	apiKeyBytes, exists := unstructuredSecret.Data[c.Config.APIKeySecretRef]
 	if !exists {
-		return nil, fmt.Errorf("API key with name '%s' not found in secret", c.Config.APIKeySecretRef)
+		return nil, fmt.Errorf("API key not found in unstructured secret: %s", unstructuredSecret.Name)
 	}
 	apiKey := string(apiKeyBytes)
 	if apiKey == "" {
-		return nil, fmt.Errorf("API key '%s' is empty in secret", c.Config.APIKeySecretRef)
+		return nil, fmt.Errorf("API key is empty in unstructured secret: %s", unstructuredSecret.Name)
 	}
-	logger.Info("successfully extracted API key from secret", "keyName", c.Config.APIKeySecretRef)
+	logger.Info("successfully extracted API key from unstructured secret", "keyName", unstructuredSecret.Name)
 
 	// marshal request body to bytes
 	reqBytes, err := json.Marshal(reqBody)

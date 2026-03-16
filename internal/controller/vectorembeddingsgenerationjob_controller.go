@@ -19,7 +19,9 @@ package controller
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -54,7 +56,21 @@ type VectorEmbeddingsGenerationJobReconciler struct {
 
 func (r *VectorEmbeddingsGenerationJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
-	logger.Info("Reconciling VectorEmbeddingsGenerationJob")
+	logger.Info("reconciling", "controller", VectorEmbeddingsGenerationJobControllerName)
+
+	// check if config CR is healthy
+	isHealthy, err := IsConfigCRHealthy(ctx, r.Client, req.Namespace)
+	if err != nil {
+		logger.Error(err, "failed to check if ControllerConfig CR is healthy")
+		return ctrl.Result{}, err
+	}
+
+	if !isHealthy {
+		logger.Info("ControllerConfig CR is not ready yet, will try again in a bit ...")
+		return ctrl.Result{
+			RequeueAfter: 10 * time.Second,
+		}, nil
+	}
 
 	// get the vector embedding generation CR
 	vectorEmbeddingsGenerationJobCR := &operatorv1alpha1.VectorEmbeddingsGenerationJob{}
@@ -77,12 +93,12 @@ func (r *VectorEmbeddingsGenerationJobReconciler) Reconcile(ctx context.Context,
 	}
 
 	// read the kubernetes secret named unstructured-secret
-	apiKeySecret := &corev1.Secret{}
+	unstructuredSecret := &corev1.Secret{}
 	if err := r.Get(ctx, types.NamespacedName{
 		Name:      "unstructured-secret",
-		Namespace: vectorEmbeddingsGenerationJobCR.Namespace,
-	}, apiKeySecret); err != nil {
-		logger.Error(err, "failed to get API key secret")
+		Namespace: req.Namespace,
+	}, unstructuredSecret); err != nil {
+		logger.Error(err, "failed to get unstructured secret")
 		return r.handleError(ctx, vectorEmbeddingsGenerationJobCR, err)
 	}
 
@@ -121,7 +137,7 @@ func (r *VectorEmbeddingsGenerationJobReconciler) Reconcile(ctx context.Context,
 	var embedded bool
 	for _, chunksFilePath := range chunksFilePaths {
 		logger.Info("processing chunked file for embedding", "file", chunksFilePath)
-		fileEmbedded, err := r.processChunkedFile(ctx, chunksFilePath, vectorEmbeddingsGenerationJobCR, apiKeySecret)
+		fileEmbedded, err := r.processChunkedFile(ctx, chunksFilePath, vectorEmbeddingsGenerationJobCR, unstructuredSecret)
 		if err != nil {
 			embeddingErrors = append(embeddingErrors, err)
 			logger.Error(err, "failed to process chunked file", "file", chunksFilePath)
@@ -134,7 +150,7 @@ func (r *VectorEmbeddingsGenerationJobReconciler) Reconcile(ctx context.Context,
 
 	if len(embeddingErrors) > 0 {
 		logger.Error(embeddingErrors[0], "failed to process some chunked files")
-		return r.handleError(ctx, vectorEmbeddingsGenerationJobCR, fmt.Errorf("failed to process some chunked files"))
+		return r.handleError(ctx, vectorEmbeddingsGenerationJobCR, errors.New("failed to process some chunked files"))
 	}
 
 	// Add force reconcile to unstructured data product if any of the file got embedded during this reconciliation
@@ -203,7 +219,7 @@ func (r *VectorEmbeddingsGenerationJobReconciler) processChunkedFile(ctx context
 
 	// Validate chunked file structure
 	if chunkedFile.ConvertedDocument == nil || chunkedFile.ChunksDocument == nil {
-		return false, fmt.Errorf("invalid chunks file structure: missing required fields")
+		return false, errors.New("invalid chunks file structure: missing required fields")
 	}
 	if chunkedFile.ChunksDocument.Chunks == nil || len(chunkedFile.ChunksDocument.Chunks.Text) == 0 {
 		logger.Info("chunks file has no text chunks, skipping", "file", chunksFilePath)
@@ -241,30 +257,29 @@ func (r *VectorEmbeddingsGenerationJobReconciler) processChunkedFile(ctx context
 	logger.Info("generating embeddings for chunks", "file", chunksFilePath, "chunkCount", len(texts))
 
 	const batchSize = 10
-	const delayBetweenBatches = 10 * time.Second
 	allEmbeddings := make([][]float64, 0, len(texts))
 
-	for i := 0; i < len(texts); i += batchSize {
-		end := i + batchSize
-		if end > len(texts) {
-			end = len(texts)
+	for batchStart := 0; batchStart < len(texts); batchStart += batchSize {
+		batchEnd := batchStart + batchSize
+		if batchEnd > len(texts) {
+			batchEnd = len(texts)
 		}
-		batch := texts[i:end]
+		batch := texts[batchStart:batchEnd]
 
-		logger.Info("processing batch", "batchStart", i, "batchEnd", end, "batchSize", len(batch))
+		logger.Info("processing batch", "batchStart", batchStart, "batchEnd", batchEnd, "batchSize", len(batch))
 		embeddingResult, err := embeddingClient.GenerateEmbeddings(ctx, batch, apiKeySecret)
-		if err != nil {
-			logger.Error(err, "failed to generate embeddings for batch", "batchStart", i, "batchEnd", end)
+		// 429 status code indicates usage limit exceeded
+		if err != nil && strings.Contains(err.Error(), "API returned status 429: Usage limit exceeded") {
+			logger.Info("usage limit exceeded, will retry after 10 seconds", "batchStart", batchStart, "batchEnd", batchEnd)
+			time.Sleep(5 * time.Second)
+			batchStart -= batchSize
+			continue
+		} else if err != nil {
+			logger.Error(err, "failed to generate embeddings for batch", "batchStart", batchStart, "batchEnd", batchEnd)
 			return false, err
 		}
-
 		allEmbeddings = append(allEmbeddings, embeddingResult.Embeddings...)
-		logger.Info("successfully processed batch", "batchStart", i, "batchEnd", end, "embeddingsGenerated", len(embeddingResult.Embeddings))
-
-		if end < len(texts) {
-			logger.Info("waiting for the next batch")
-			time.Sleep(delayBetweenBatches)
-		}
+		logger.Info("successfully processed batch", "batchStart", batchStart, "batchEnd", batchEnd, "embeddingsGenerated", len(embeddingResult.Embeddings))
 	}
 
 	logger.Info("successfully generated embeddings", "file", chunksFilePath, "embeddingCount", len(allEmbeddings))
