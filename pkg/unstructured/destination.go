@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"regexp"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -31,6 +33,18 @@ type SnowflakeInternalStage struct {
 	Database string
 	Schema   string
 	Stage    string
+}
+
+func TransformSnowflakename(f *EmbeddingsFile) string {
+	// Replace invalid characters with underscores
+	invalidChars := regexp.MustCompile(`[^a-zA-Z0-9/_.\-]`)
+	sanitized := invalidChars.ReplaceAllString(f.ConvertedDocument.Metadata.RawFilePath, "_")
+
+	// Collapse multiple consecutive underscores to avoid n-hyphen and m-hyphen patterns
+	multipleUnderscores := regexp.MustCompile(`_{2,}`)
+	sanitized = multipleUnderscores.ReplaceAllString(sanitized, "_")
+	name := fmt.Sprintf("%s_%s", sanitized, strings.Trim(f.ConvertedDocument.Metadata.FileIdentifier, "\""))
+	return name
 }
 
 func (d *SnowflakeInternalStage) SyncFilesToDestination(ctx context.Context,
@@ -65,7 +79,7 @@ func (d *SnowflakeInternalStage) SyncFilesToDestination(ctx context.Context,
 		if embeddingsFile.ConvertedDocument != nil &&
 			embeddingsFile.ConvertedDocument.Metadata != nil &&
 			embeddingsFile.ConvertedDocument.Metadata.RawFilePath != "" {
-			embeddingsFilesInStage[embeddingsFile.ConvertedDocument.Metadata.RawFilePath] = embeddingsFile
+			embeddingsFilesInStage[TransformSnowflakename(&embeddingsFile)] = embeddingsFile
 			embeddingsFilesList = append(embeddingsFilesList, embeddingsFile.ConvertedDocument.Metadata.RawFilePath)
 		}
 	}
@@ -89,19 +103,21 @@ func (d *SnowflakeInternalStage) SyncFilesToDestination(ctx context.Context,
 			continue
 		}
 
-		// check if embeddings file already exists in the stage
-		if _, exists := embeddingsFilesInStage[embeddingsFileInFilestore.ConvertedDocument.Metadata.RawFilePath]; exists {
-			logger.Info("file already exists in the stage",
-				"file", embeddingsFileInFilestore.ConvertedDocument.Metadata.RawFilePath)
+		transformedName := TransformSnowflakename(&embeddingsFileInFilestore)
 
-			embeddingsFileInStage := embeddingsFilesInStage[embeddingsFileInFilestore.ConvertedDocument.Metadata.RawFilePath]
+		// check if embeddings file already exists in the stage
+		if _, exists := embeddingsFilesInStage[transformedName]; exists {
+			logger.Info("file already exists in the stage",
+				"file", transformedName, "rawFilePath", embeddingsFileInFilestore.ConvertedDocument.Metadata.RawFilePath)
+
+			embeddingsFileInStage := embeddingsFilesInStage[transformedName]
 
 			// delete the file from the map as we will use this map to delete extra files from the stage
-			delete(embeddingsFilesInStage, embeddingsFileInFilestore.ConvertedDocument.Metadata.RawFilePath)
+			delete(embeddingsFilesInStage, transformedName)
 
 			if embeddingsFileInStage.EmbeddingDocument.Metadata.Equal(embeddingsFileInFilestore.EmbeddingDocument.Metadata) {
 				logger.Info("file is already in the stage and the configuration is the same, skipping ...",
-					"file", embeddingsFileInFilestore.ConvertedDocument.Metadata.RawFilePath)
+					"file", transformedName, "rawFilePath", embeddingsFileInFilestore.ConvertedDocument.Metadata.RawFilePath)
 				// nothing to do, file is already in the stage
 				continue
 			}
@@ -125,23 +141,24 @@ func (d *SnowflakeInternalStage) SyncFilesToDestination(ctx context.Context,
 			// stage name is the internal stage name
 			d.Stage,
 			// subpath is the file name
-			embeddingsFilePathInFilestore,
+			transformedName,
 			&fileRows); err != nil {
-			logger.Error(err, "failed to upload file to snowflake internal stage", "file", embeddingsFilePathInFilestore)
+			logger.Error(err, "failed to upload file to snowflake internal stage", "file", transformedName,
+				"rawFilePath", embeddingsFileInFilestore.ConvertedDocument.Metadata.RawFilePath)
 			errorList = append(errorList, err)
 			continue
 		}
 		logger.Info("successfully uploaded file to snowflake internal stage",
-			"file", embeddingsFileInFilestore.ConvertedDocument.Metadata.RawFilePath)
+			"file", transformedName)
 
 		if len(fileRows) == 0 {
 			logger.Error(fmt.Errorf("no file rows returned while uploading file to snowflake internal stage: %s",
-				embeddingsFileInFilestore.ConvertedDocument.Metadata.RawFilePath),
+				transformedName),
 				"no file rows returned",
-				"file", embeddingsFileInFilestore.ConvertedDocument.Metadata.RawFilePath)
+				"file", transformedName)
 			errorList = append(errorList,
 				fmt.Errorf("no file rows returned while uploading file to snowflake internal stage: %s",
-					embeddingsFileInFilestore.ConvertedDocument.Metadata.RawFilePath))
+					transformedName))
 			continue
 		}
 	}
