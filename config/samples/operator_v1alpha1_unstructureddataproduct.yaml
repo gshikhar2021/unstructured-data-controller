@@ -50,6 +50,16 @@ spec:
       database: "TESTING_DB"
       schema: "TESTINGSCHEMA2"
       stage: "TESTINGSCHEMA_INTERNAL_STG"
+    artifacts:
+     - type: stage
+       name: documentProcessorConfig
+       path: processed-documents
+     - type: stage
+       name: chunksGeneratorConfig
+       path: chunks
+     - type: stage
+       name: vectorEmbeddingsGeneratorConfig
+       path: vector-embeddings
       # type: "s3"
       # s3DestinationConfig:
       #   bucket: output-chunks-bucket
