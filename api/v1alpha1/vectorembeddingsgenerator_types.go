@@ -18,6 +18,7 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 type EmbeddingProvider string
@@ -104,5 +105,8 @@ func (c *VectorEmbeddingsGenerator) UpdateStatus(message string, err error) {
 }
 
 func init() {
-	SchemeBuilder.Register(&VectorEmbeddingsGenerator{}, &VectorEmbeddingsGeneratorList{})
+	SchemeBuilder.Register(func(s *runtime.Scheme) error {
+		s.AddKnownTypes(GroupVersion, &VectorEmbeddingsGenerator{}, &VectorEmbeddingsGeneratorList{})
+		return nil
+	})
 }

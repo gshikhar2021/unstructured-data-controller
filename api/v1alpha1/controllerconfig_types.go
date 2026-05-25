@@ -18,6 +18,7 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 const (
@@ -82,10 +83,6 @@ type ControllerConfigList struct {
 	Items           []ControllerConfig `json:"items"`
 }
 
-func init() {
-	SchemeBuilder.Register(&ControllerConfig{}, &ControllerConfigList{})
-}
-
 func (c *ControllerConfig) UpdateStatus(err error) {
 	condition := metav1.Condition{
 		Type:               ConfigCondition,
@@ -135,4 +132,11 @@ func (c *ControllerConfig) IsHealthy() bool {
 		}
 	}
 	return false
+}
+
+func init() {
+	SchemeBuilder.Register(func(s *runtime.Scheme) error {
+		s.AddKnownTypes(GroupVersion, &ControllerConfig{}, &ControllerConfigList{})
+		return nil
+	})
 }

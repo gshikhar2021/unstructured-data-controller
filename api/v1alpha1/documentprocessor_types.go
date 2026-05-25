@@ -20,6 +20,7 @@ import (
 	"slices"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 const (
@@ -158,5 +159,8 @@ func (d *DocumentProcessor) UpdateStatus(message string, err error) {
 }
 
 func init() {
-	SchemeBuilder.Register(&DocumentProcessor{}, &DocumentProcessorList{})
+	SchemeBuilder.Register(func(s *runtime.Scheme) error {
+		s.AddKnownTypes(GroupVersion, &DocumentProcessor{}, &DocumentProcessorList{})
+		return nil
+	})
 }

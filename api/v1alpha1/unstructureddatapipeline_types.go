@@ -18,6 +18,7 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 type (
@@ -201,5 +202,8 @@ func (u *UnstructuredDataPipeline) UpdateStatus(message string, err error) {
 }
 
 func init() {
-	SchemeBuilder.Register(&UnstructuredDataPipeline{}, &UnstructuredDataPipelineList{})
+	SchemeBuilder.Register(func(s *runtime.Scheme) error {
+		s.AddKnownTypes(GroupVersion, &UnstructuredDataPipeline{}, &UnstructuredDataPipelineList{})
+		return nil
+	})
 }

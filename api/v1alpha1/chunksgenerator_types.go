@@ -18,6 +18,7 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 const (
@@ -102,5 +103,8 @@ func (c *ChunksGenerator) UpdateStatus(message string, err error) {
 }
 
 func init() {
-	SchemeBuilder.Register(&ChunksGenerator{}, &ChunksGeneratorList{})
+	SchemeBuilder.Register(func(s *runtime.Scheme) error {
+		s.AddKnownTypes(GroupVersion, &ChunksGenerator{}, &ChunksGeneratorList{})
+		return nil
+	})
 }
