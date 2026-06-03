@@ -52,6 +52,11 @@ spec:
                 type: string
               embeddingGeneratorConfig:
                 properties:
+                  geminiEmbedding2Config:
+                    properties:
+                      encodingformat:
+                        type: string
+                    type: object
                   modelName:
                     type: string
                   nomicEmbedTextV15Config:

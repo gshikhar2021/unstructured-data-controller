@@ -61,6 +61,10 @@ var modelMap = map[Model]ModelCredentials{
 		Endpoint: "NOMIC_ENDPOINT",
 		APIKey:   "NOMIC_API_KEY",
 	},
+	Model("gemini-embedding-2"): {
+		Endpoint: "GEMINI_ENDPOINT",
+		APIKey:   "GEMINI_API_KEY",
+	},
 }
 
 // ControllerConfigReconciler reconciles a ControllerConfig object

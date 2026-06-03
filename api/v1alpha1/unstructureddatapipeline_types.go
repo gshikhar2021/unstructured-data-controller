@@ -88,9 +88,14 @@ type TokenSplitterConfig struct {
 type VectorEmbeddingsGeneratorConfig struct {
 	ModelName               string                  `json:"modelName,omitempty"`
 	NomicEmbedTextV15Config NomicEmbedTextV15Config `json:"nomicEmbedTextV15Config,omitempty"`
+	GeminiEmbedding2Config  GeminiEmbedding2Config  `json:"geminiEmbedding2Config,omitempty"`
 }
 
 type NomicEmbedTextV15Config struct {
+	EncodingFormat string `json:"encodingformat,omitempty"`
+}
+
+type GeminiEmbedding2Config struct {
 	EncodingFormat string `json:"encodingformat,omitempty"`
 }
 

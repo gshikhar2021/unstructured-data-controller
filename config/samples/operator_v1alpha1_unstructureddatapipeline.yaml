@@ -41,8 +41,10 @@ spec:
       keepSeparator: true
       separators: ["\n\n", "\n", " ", ""]
   vectorEmbeddingsGeneratorConfig:
-    modelName: "nomic-ai/nomic-embed-text-v1.5"
-    nomicEmbedTextV15Config:
+    modelName: "gemini-embedding-2"
+    # nomicEmbedTextV15Config:
+    #   encodingformat: "float"
+    geminiEmbedding2Config:
       encodingformat: "float"
   destinationConfig:
     type: "snowflakeInternalStage"

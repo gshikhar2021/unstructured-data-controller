@@ -218,30 +218,47 @@ func (r *VectorEmbeddingsGeneratorReconciler) processChunkedFile(ctx context.Con
 		return false, nil
 	}
 
-	embeddingFileMetadata := &unstructured.EmbeddingFileMetadata{
-		ConvertedFileMetadata:   chunkedFile.ConvertedDocument.Metadata,
-		ChunkFileMetadata:       chunkedFile.ChunksDocument.Metadata,
-		ModelName:               vectorEmbeddingsGeneratorCR.Spec.VectorEmbeddingsGeneratorConfig.ModelName,
-		NomicEmbedTextV15Config: vectorEmbeddingsGeneratorCR.Spec.VectorEmbeddingsGeneratorConfig.NomicEmbedTextV15Config,
-	}
-
 	texts := make([]string, len(chunkedFile.ChunksDocument.Chunks.Text))
 	copy(texts, chunkedFile.ChunksDocument.Chunks.Text)
 
-	var embeddingClient embedding.EmbeddingGenerator
+	var (
+		embeddingClient embedding.EmbeddingGenerator
+		endpoint        string
+		apiKey          string
+	)
 
-	switch vectorEmbeddingsGeneratorCR.Spec.VectorEmbeddingsGeneratorConfig.ModelName {
+	modelName := vectorEmbeddingsGeneratorCR.Spec.VectorEmbeddingsGeneratorConfig.ModelName
+	config, supported := modelMap[Model(modelName)]
+	if !supported {
+		return false, fmt.Errorf("unsupported embedding model: %s", modelName)
+	}
+
+	endpoint = string(unstructuredSecret.Data[config.Endpoint])
+	apiKey = string(unstructuredSecret.Data[config.APIKey])
+
+	embeddingClient = embedding.NewHTTPClient(&embedding.HTTPClientConfig{
+		Endpoint:   endpoint,
+		AuthFormat: "Bearer",
+		APIKey:     apiKey,
+		ModelName:  modelName,
+	})
+
+	embeddingFileMetadata := &unstructured.EmbeddingFileMetadata{
+		ConvertedFileMetadata:   chunkedFile.ConvertedDocument.Metadata,
+		ChunkFileMetadata:       chunkedFile.ChunksDocument.Metadata,
+		ModelName:               modelName,
+		NomicEmbedTextV15Config: vectorEmbeddingsGeneratorCR.Spec.VectorEmbeddingsGeneratorConfig.NomicEmbedTextV15Config,
+		GeminiEmbedding2Config:  vectorEmbeddingsGeneratorCR.Spec.VectorEmbeddingsGeneratorConfig.GeminiEmbedding2Config,
+	}
+
+	var encodingFormat string
+	switch modelName {
+	case "gemini-embedding-2":
+		encodingFormat = vectorEmbeddingsGeneratorCR.Spec.VectorEmbeddingsGeneratorConfig.GeminiEmbedding2Config.EncodingFormat
 	case "nomic-ai/nomic-embed-text-v1.5":
-		endpoint := string(unstructuredSecret.Data[modelMap[Model(vectorEmbeddingsGeneratorCR.Spec.VectorEmbeddingsGeneratorConfig.ModelName)].Endpoint])
-		apiKey := string(unstructuredSecret.Data[modelMap[Model(vectorEmbeddingsGeneratorCR.Spec.VectorEmbeddingsGeneratorConfig.ModelName)].APIKey])
-		embeddingClient = embedding.NewHTTPClient(&embedding.HTTPClientConfig{
-			Endpoint:   endpoint,
-			APIKey:     apiKey,
-			AuthFormat: "Bearer",
-			ModelName:  vectorEmbeddingsGeneratorCR.Spec.VectorEmbeddingsGeneratorConfig.ModelName,
-		})
+		encodingFormat = vectorEmbeddingsGeneratorCR.Spec.VectorEmbeddingsGeneratorConfig.NomicEmbedTextV15Config.EncodingFormat
 	default:
-		return false, fmt.Errorf("unsupported embedding model: %s", vectorEmbeddingsGeneratorCR.Spec.VectorEmbeddingsGeneratorConfig.ModelName)
+		return false, fmt.Errorf("unsupported model for encoding format: %s", modelName)
 	}
 
 	logger.Info("generating embeddings for chunks", "file", chunksFilePath, "chunkCount", len(texts))
@@ -257,7 +274,6 @@ func (r *VectorEmbeddingsGeneratorReconciler) processChunkedFile(ctx context.Con
 		batch := texts[batchStart:batchEnd]
 
 		logger.Info("processing batch", "batchStart", batchStart, "batchEnd", batchEnd, "batchSize", len(batch))
-		encodingFormat := vectorEmbeddingsGeneratorCR.Spec.VectorEmbeddingsGeneratorConfig.NomicEmbedTextV15Config.EncodingFormat
 		embeddingResult, err := embeddingClient.GenerateEmbeddings(ctx, batch, encodingFormat)
 		// 429 status code indicates usage limit exceeded
 		if err != nil && strings.Contains(err.Error(), "API returned status 429: Usage limit exceeded") {
@@ -365,6 +381,7 @@ func (r *VectorEmbeddingsGeneratorReconciler) needsEmbedding(ctx context.Context
 			ChunkFileMetadata:       chunkedFile.ChunksDocument.Metadata,
 			ModelName:               vectorEmbeddingsGeneratorCR.Spec.VectorEmbeddingsGeneratorConfig.ModelName,
 			NomicEmbedTextV15Config: vectorEmbeddingsGeneratorCR.Spec.VectorEmbeddingsGeneratorConfig.NomicEmbedTextV15Config,
+			GeminiEmbedding2Config:  vectorEmbeddingsGeneratorCR.Spec.VectorEmbeddingsGeneratorConfig.GeminiEmbedding2Config,
 		}
 
 		if currentEmbeddedFile.EmbeddingDocument.Metadata.Equal(fileToEmbedMetadata) {
