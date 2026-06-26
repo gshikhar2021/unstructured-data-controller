@@ -15,6 +15,7 @@ spec:
       labels:
         app: mcp-server
     spec:
+      serviceAccountName: mcp-server
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
@@ -73,6 +74,11 @@ spec:
             secretKeyRef:
               name: mcp-server-secret
               key: SSO_CLIENT_SECRET
+        - name: SNOWFLAKE_ACCOUNT
+          valueFrom:
+            configMapKeyRef:
+              name: mcp-server-config
+              key: SNOWFLAKE_ACCOUNT
 
         livenessProbe:
           httpGet:

@@ -4,12 +4,15 @@ kind: Kustomization
 namespace: unstructured-controller-namespace
 
 resources:
+- serviceaccount.yaml
 - configmap.yaml
 - secret.yaml
 - deployment.yaml
 - service.yaml
+- role.yaml
+- rolebinding.yaml
 
 images:
 - name: mcp-server
-  newName: ghcr.io/redhat-data-and-ai/unstructured-data-controller-mcp-server
-  newTag: latest
+  newName: ghcr.io/gshikhar2021/unstructured-data-controller-mcp-server
+  newTag: testing
