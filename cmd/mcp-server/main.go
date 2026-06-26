@@ -29,6 +29,7 @@ import (
 
 	mcptools "github.com/redhat-data-and-ai/unstructured-data-controller/internal/mcp/tools"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/auth"
+	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/embedding"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/k8sclient"
 )
 
@@ -71,8 +72,16 @@ func main() {
 		nil,
 	)
 
+	embeddingClient := embedding.NewHTTPClient(&embedding.HTTPClientConfig{
+		Endpoint:   os.Getenv("EMBEDDING_ENDPOINT"),
+		APIKey:     os.Getenv("EMBEDDING_API_KEY"),
+		AuthFormat: "Bearer",
+		ModelName:  os.Getenv("EMBEDDING_MODEL_NAME"),
+	})
+
 	mcptools.RegisterPing(mcpServer)
 	mcptools.RegisterListPipelines(mcpServer, k8sClient)
+	mcptools.RegisterGetChunksForEmbeddings(mcpServer, embeddingClient)
 
 	oauthStore := auth.NewOAuthStore()
 	oauthMiddleware := auth.NewMiddleware(provider, logger)

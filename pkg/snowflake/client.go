@@ -28,6 +28,13 @@ import (
 	"github.com/snowflakedb/gosnowflake"
 )
 
+// ChunkResult contains a chunk returned by vector similarity search
+type ChunkResult struct {
+	ChunkIndex int     `json:"chunk_index"`
+	ChunkText  string  `json:"chunk_text"`
+	Score      float64 `json:"score"`
+}
+
 // DatabaseInfo contains information about a Snowflake database
 type DatabaseInfo struct {
 	Name    string `json:"name" db:"name"`
@@ -35,9 +42,7 @@ type DatabaseInfo struct {
 	Comment string `json:"comment,omitempty" db:"comment"`
 }
 
-// ShowDatabases connects to Snowflake using the provided OAuth token,
-func ShowDatabases(ctx context.Context, oauthToken string) ([]DatabaseInfo, error) {
-	// Get Snowflake connection parameters from environment
+func openConnection(oauthToken string) (*sql.DB, error) {
 	account := os.Getenv("SNOWFLAKE_ACCOUNT")
 	if account == "" {
 		return nil, errors.New("SNOWFLAKE_ACCOUNT environment variable not set")
@@ -47,7 +52,7 @@ func ShowDatabases(ctx context.Context, oauthToken string) ([]DatabaseInfo, erro
 		Account:       account,
 		Authenticator: gosnowflake.AuthTypeOAuth,
 		Token:         oauthToken,
-		OCSPFailOpen:  gosnowflake.OCSPFailOpenFalse,
+		OCSPFailOpen:  gosnowflake.OCSPFailOpenTrue,
 	}
 
 	dsn, err := gosnowflake.DSN(cfg)
@@ -59,20 +64,20 @@ func ShowDatabases(ctx context.Context, oauthToken string) ([]DatabaseInfo, erro
 	if err != nil {
 		return nil, fmt.Errorf("failed to create snowflake connection: %w", err)
 	}
-	defer func() { _ = db.Close() }()
 
-	// Configure connection pool for security
-	// MaxOpenConns=1: Single connection per request (we open/close immediately)
-	// MaxIdleConns=0: Don't keep connections idle (reduces token exposure time)
-	// ConnMaxLifetime=5min: Close connections after 5 minutes (limits token lifetime)
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(0)
 	db.SetConnMaxLifetime(5 * time.Minute)
 
-	// Test the connection
-	if err := db.PingContext(ctx); err != nil {
-		return nil, fmt.Errorf("failed to connect to snowflake: %w", err)
+	return db, nil
+}
+
+func ShowDatabases(ctx context.Context, oauthToken string) ([]DatabaseInfo, error) {
+	db, err := openConnection(oauthToken)
+	if err != nil {
+		return nil, err
 	}
+	defer func() { _ = db.Close() }()
 
 	// Run SHOW DATABASES query
 	// This will return only databases the authenticated user has access to (RBAC enforced by Snowflake)
@@ -125,4 +130,41 @@ func ShowDatabases(ctx context.Context, oauthToken string) ([]DatabaseInfo, erro
 	}
 
 	return databases, nil
+}
+
+func SearchChunks(
+	ctx context.Context, oauthToken, database, schema, table, vectorLiteral string,
+) ([]ChunkResult, error) {
+	db, err := openConnection(oauthToken)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = db.Close() }()
+
+	query := fmt.Sprintf(
+		`SELECT CHUNK_INDEX, CHUNK_TEXT, VECTOR_COSINE_SIMILARITY(EMBEDDING, %s::VECTOR(FLOAT,768)) AS score `+
+			`FROM %s.%s.%s ORDER BY score DESC LIMIT 5`,
+		vectorLiteral, database, schema, table,
+	)
+
+	rows, err := db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute vector search: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var chunks []ChunkResult
+	for rows.Next() {
+		var c ChunkResult
+		if err := rows.Scan(&c.ChunkIndex, &c.ChunkText, &c.Score); err != nil {
+			return nil, fmt.Errorf("failed to scan chunk row: %w", err)
+		}
+		chunks = append(chunks, c)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating chunk rows: %w", err)
+	}
+
+	return chunks, nil
 }

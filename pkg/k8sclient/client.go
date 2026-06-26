@@ -33,20 +33,14 @@ var (
 )
 
 func init() {
-	// Register standard Kubernetes types (Pod, Service, etc.)
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-	// Register our custom CRDs (UnstructuredDataPipeline, etc.)
 	utilruntime.Must(operatorv1alpha1.AddToScheme(scheme))
 }
 
-// Client wraps a Kubernetes client for accessing cluster resources
 type Client struct {
 	client client.Client
 }
 
-// NewInClusterClient creates a Kubernetes client using the in-cluster configuration.
-// This reads the ServiceAccount token and CA cert that Kubernetes automatically
-// mounts at /var/run/secrets/kubernetes.io/serviceaccount/
 func NewInClusterClient() (*Client, error) {
 	// rest.InClusterConfig() reads from:
 	// 1. /var/run/secrets/kubernetes.io/serviceaccount/token (for auth)
@@ -68,7 +62,7 @@ func NewInClusterClient() (*Client, error) {
 	}, nil
 }
 
-// PipelineInfo contains basic information about an UnstructuredDataPipeline CR
+// PipelineInfo contains UnstructuredDataPipeline CR
 type PipelineInfo struct {
 	Name      string `json:"name"`
 	Namespace string `json:"namespace"`
@@ -80,8 +74,6 @@ type PipelineInfo struct {
 func (c *Client) ListPipelines(ctx context.Context) ([]PipelineInfo, error) {
 	pipelineList := &operatorv1alpha1.UnstructuredDataPipelineList{}
 
-	// List all pipelines in the unstructured-controller-namespace
-	// This will use the ServiceAccount's RBAC permissions
 	err := c.client.List(ctx, pipelineList, &client.ListOptions{
 		Namespace: "unstructured-controller-namespace",
 	})
@@ -89,7 +81,6 @@ func (c *Client) ListPipelines(ctx context.Context) ([]PipelineInfo, error) {
 		return nil, fmt.Errorf("failed to list pipelines: %w", err)
 	}
 
-	// Convert to simple PipelineInfo structs
 	result := make([]PipelineInfo, len(pipelineList.Items))
 	for i, pipeline := range pipelineList.Items {
 		info := PipelineInfo{
@@ -97,7 +88,6 @@ func (c *Client) ListPipelines(ctx context.Context) ([]PipelineInfo, error) {
 			Namespace: pipeline.Namespace,
 		}
 
-		// Extract the UnstructuredDataPipelineReady condition status and message
 		for _, condition := range pipeline.Status.Conditions {
 			if condition.Type == "UnstructuredDataPipelineReady" {
 				info.Status = string(condition.Status)

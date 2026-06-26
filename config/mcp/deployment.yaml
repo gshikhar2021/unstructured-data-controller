@@ -79,6 +79,21 @@ spec:
             configMapKeyRef:
               name: mcp-server-config
               key: SNOWFLAKE_ACCOUNT
+        - name: EMBEDDING_ENDPOINT
+          valueFrom:
+            secretKeyRef:
+              name: mcp-server-secret
+              key: EMBEDDING_ENDPOINT
+        - name: EMBEDDING_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: mcp-server-secret
+              key: EMBEDDING_API_KEY
+        - name: EMBEDDING_MODEL_NAME
+          valueFrom:
+            secretKeyRef:
+              name: mcp-server-secret
+              key: EMBEDDING_MODEL_NAME
 
         livenessProbe:
           httpGet:
