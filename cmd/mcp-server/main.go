@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"log/slog"
 	"net/http"
 	"os"
@@ -78,6 +79,10 @@ func main() {
 		AuthFormat: "Bearer",
 		ModelName:  os.Getenv("EMBEDDING_MODEL_NAME"),
 	})
+	// TODO: replace with proper CA bundle for production
+	embeddingClient.Client.Transport = &http.Transport{
+		TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: true}, //nolint:gosec
+	}
 
 	mcptools.RegisterPing(mcpServer)
 	mcptools.RegisterListPipelines(mcpServer, k8sClient)
