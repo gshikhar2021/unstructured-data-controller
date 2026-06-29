@@ -30,8 +30,8 @@ import (
 )
 
 type getChunksArgs struct {
-	UDPName string `json:"udp_name" jsonschema:"Name of the unstructured data pipeline (data product)"`
-	Query   string `json:"query" jsonschema:"The search query to find relevant chunks"`
+	UDPDatabase string `json:"udp_database" jsonschema:"Name of the data product database"`
+	Query       string `json:"query" jsonschema:"The search query to find relevant chunks"`
 }
 
 func RegisterGetChunksForEmbeddings(s *mcp.Server, embeddingClient *embedding.HTTPClient) {
@@ -39,9 +39,9 @@ func RegisterGetChunksForEmbeddings(s *mcp.Server, embeddingClient *embedding.HT
 		Name:        "get_chunks_for_embeddings",
 		Description: "Search for relevant text chunks in a data product using vector cosine similarity. Returns top 5 matching chunks for the given query.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, args getChunksArgs) (*mcp.CallToolResult, any, error) {
-		if args.UDPName == "" || args.Query == "" {
+		if args.UDPDatabase == "" || args.Query == "" {
 			return &mcp.CallToolResult{
-				Content: []mcp.Content{&mcp.TextContent{Text: "Error: udp_name and query are required"}},
+				Content: []mcp.Content{&mcp.TextContent{Text: "Error: udp_database and query are required"}},
 				IsError: true,
 			}, nil, nil
 		}
@@ -70,7 +70,7 @@ func RegisterGetChunksForEmbeddings(s *mcp.Server, embeddingClient *embedding.HT
 		}
 
 		vectorLiteral := formatVectorLiteral(result.Embeddings[0])
-		databaseName := strings.ToUpper(strings.ReplaceAll(args.UDPName, "-", "_"))
+		databaseName := strings.ToUpper(strings.ReplaceAll(args.UDPDatabase, "-", "_"))
 
 		chunks, err := snowflake.SearchChunks(ctx, oauthToken, databaseName, "MARTS", "CHUNKS_WITH_EMBEDDINGS", vectorLiteral)
 		if err != nil {
@@ -80,7 +80,7 @@ func RegisterGetChunksForEmbeddings(s *mcp.Server, embeddingClient *embedding.HT
 			}, nil, nil
 		}
 
-		jsonBytes, err := json.MarshalIndent(chunks, "", "  ")
+		jsonBytes, err := json.Marshal(chunks)
 		if err != nil {
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("Error marshaling result: %v", err)}},

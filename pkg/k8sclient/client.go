@@ -23,8 +23,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/config"
 )
 
 var (
@@ -40,13 +40,13 @@ type Client struct {
 	client client.Client
 }
 
-func NewInClusterClient() (*Client, error) {
-	config, err := rest.InClusterConfig()
+func NewClient() (*Client, error) {
+	cfg, err := config.GetConfig()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get in-cluster config: %w", err)
+		return nil, fmt.Errorf("failed to get kubernetes config: %w", err)
 	}
 
-	k8sClient, err := client.New(config, client.Options{Scheme: scheme})
+	k8sClient, err := client.New(cfg, client.Options{Scheme: scheme})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kubernetes client: %w", err)
 	}

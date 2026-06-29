@@ -18,7 +18,6 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"log/slog"
 	"net/http"
 	"os"
@@ -26,12 +25,14 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	mcptools "github.com/redhat-data-and-ai/unstructured-data-controller/internal/mcp/tools"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/auth"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/embedding"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/k8sclient"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 const (
@@ -45,6 +46,7 @@ func main() {
 		Level: slog.LevelInfo,
 	}))
 	slog.SetDefault(logger)
+	ctrl.SetLogger(logr.FromSlogHandler(logger.Handler()))
 
 	oauthCfg, err := auth.NewOAuthConfigFromEnv()
 	if err != nil {
@@ -58,7 +60,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	k8sClient, err := k8sclient.NewInClusterClient()
+	k8sClient, err := k8sclient.NewClient()
 	if err != nil {
 		slog.Error("failed to create kubernetes client", "error", err)
 		os.Exit(1)
@@ -79,11 +81,6 @@ func main() {
 		AuthFormat: "Bearer",
 		ModelName:  os.Getenv("EMBEDDING_MODEL_NAME"),
 	})
-	if os.Getenv("ENVIRONMENT") == "local" {
-		embeddingClient.Client.Transport = &http.Transport{
-			TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: true}, //nolint:gosec
-		}
-	}
 
 	mcptools.RegisterListPipelines(mcpServer, k8sClient)
 	mcptools.RegisterGetChunksForEmbeddings(mcpServer, embeddingClient)

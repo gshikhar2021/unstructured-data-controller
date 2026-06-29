@@ -19,12 +19,10 @@ package snowflake
 import (
 	"context"
 	"fmt"
-	"strings"
 )
 
 type DatabaseInfo struct {
 	Name    string `json:"name" db:"name"`
-	Owner   string `json:"owner,omitempty" db:"owner"`
 	Comment string `json:"comment,omitempty" db:"comment"`
 }
 
@@ -41,47 +39,5 @@ func ShowDatabases(ctx context.Context, oauthToken string) ([]DatabaseInfo, erro
 	}
 	defer func() { _ = rows.Close() }()
 
-	columns, err := rows.Columns()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get column names: %w", err)
-	}
-
-	var databases []DatabaseInfo
-
-	for rows.Next() {
-		values := make([]any, len(columns))
-		for i := range values {
-			var placeholder any
-			values[i] = &placeholder
-		}
-
-		if err := rows.Scan(values...); err != nil {
-			return nil, fmt.Errorf("failed to scan database row: %w", err)
-		}
-
-		var db DatabaseInfo
-		for i, colName := range columns {
-			val := *(values[i].(*any))
-			if val == nil {
-				continue
-			}
-			s := fmt.Sprintf("%s", val)
-			switch strings.ToLower(colName) {
-			case "name":
-				db.Name = s
-			case "owner":
-				db.Owner = s
-			case "comment":
-				db.Comment = s
-			default:
-			}
-		}
-		databases = append(databases, db)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating database rows: %w", err)
-	}
-
-	return databases, nil
+	return scanRows[DatabaseInfo](rows)
 }

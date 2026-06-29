@@ -35,6 +35,7 @@ func openConnection(oauthToken string) (*sql.DB, error) {
 		Account:       account,
 		Authenticator: gosnowflake.AuthTypeOAuth,
 		Token:         oauthToken,
+		Role:          "PUBLIC",
 		OCSPFailOpen:  gosnowflake.OCSPFailOpenTrue,
 	}
 

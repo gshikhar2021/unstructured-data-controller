@@ -22,9 +22,9 @@ import (
 )
 
 type ChunkResult struct {
-	ChunkIndex int     `json:"chunk_index"`
-	ChunkText  string  `json:"chunk_text"`
-	Score      float64 `json:"score"`
+	ChunkIndex string `json:"chunk_index" db:"chunk_index"`
+	ChunkText  string `json:"chunk_text" db:"chunk_text"`
+	Score      string `json:"score" db:"score"`
 }
 
 func SearchChunks(
@@ -48,18 +48,5 @@ func SearchChunks(
 	}
 	defer func() { _ = rows.Close() }()
 
-	var chunks []ChunkResult
-	for rows.Next() {
-		var c ChunkResult
-		if err := rows.Scan(&c.ChunkIndex, &c.ChunkText, &c.Score); err != nil {
-			return nil, fmt.Errorf("failed to scan chunk row: %w", err)
-		}
-		chunks = append(chunks, c)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating chunk rows: %w", err)
-	}
-
-	return chunks, nil
+	return scanRows[ChunkResult](rows)
 }

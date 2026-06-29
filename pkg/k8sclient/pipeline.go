@@ -19,10 +19,13 @@ package k8sclient
 import (
 	"context"
 	"fmt"
+	"os"
 
 	operatorv1alpha1 "github.com/redhat-data-and-ai/unstructured-data-controller/api/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+const defaultPipelineNamespace = "unstructured-controller-namespace"
 
 type PipelineInfo struct {
 	Name      string `json:"name"`
@@ -34,8 +37,13 @@ type PipelineInfo struct {
 func (c *Client) ListPipelines(ctx context.Context) ([]PipelineInfo, error) {
 	pipelineList := &operatorv1alpha1.UnstructuredDataPipelineList{}
 
+	namespace := os.Getenv("PIPELINE_NAMESPACE")
+	if namespace == "" {
+		namespace = defaultPipelineNamespace
+	}
+
 	err := c.client.List(ctx, pipelineList, &client.ListOptions{
-		Namespace: "unstructured-controller-namespace",
+		Namespace: namespace,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list pipelines: %w", err)

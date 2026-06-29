@@ -82,8 +82,7 @@ func RegisterListPipelines(s *mcp.Server, k8sClient *k8sclient.Client) {
 			Databases: databases,
 		}
 
-		// Marshal to JSON for pretty output
-		jsonBytes, err := json.MarshalIndent(result, "", "  ")
+		jsonBytes, err := json.Marshal(result)
 		if err != nil {
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{
