@@ -62,7 +62,7 @@ func RegisterGetChunksForEmbeddings(s *mcp.Server, embeddingClient *embedding.HT
 			}, nil, nil
 		}
 
-		if result.Count == 0 {
+		if result.Count == 0 || len(result.Embeddings) == 0 {
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{Text: "Error: embedding API returned no vectors"}},
 				IsError: true,
@@ -70,9 +70,9 @@ func RegisterGetChunksForEmbeddings(s *mcp.Server, embeddingClient *embedding.HT
 		}
 
 		vectorLiteral := formatVectorLiteral(result.Embeddings[0])
-		schemaName := strings.ToUpper(strings.ReplaceAll(args.UDPName, "-", "_"))
+		databaseName := strings.ToUpper(strings.ReplaceAll(args.UDPName, "-", "_"))
 
-		chunks, err := snowflake.SearchChunks(ctx, oauthToken, "SNOWPIPE_DB", schemaName, "CHUNKS_WITH_EMBEDDINGS", vectorLiteral)
+		chunks, err := snowflake.SearchChunks(ctx, oauthToken, databaseName, "MARTS", "CHUNKS_WITH_EMBEDDINGS", vectorLiteral)
 		if err != nil {
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("Error searching chunks: %v", err)}},
@@ -90,7 +90,7 @@ func RegisterGetChunksForEmbeddings(s *mcp.Server, embeddingClient *embedding.HT
 
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{
-				Text: fmt.Sprintf("Found %d chunks for query in SNOWPIPE_DB.%s:\n%s", len(chunks), schemaName, string(jsonBytes)),
+				Text: fmt.Sprintf("Found %d chunks for query in %s.MARTS:\n%s", len(chunks), databaseName, string(jsonBytes)),
 			}},
 		}, nil, nil
 	})

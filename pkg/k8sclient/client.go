@@ -17,7 +17,6 @@ limitations under the License.
 package k8sclient
 
 import (
-	"context"
 	"fmt"
 
 	operatorv1alpha1 "github.com/redhat-data-and-ai/unstructured-data-controller/api/v1alpha1"
@@ -42,16 +41,11 @@ type Client struct {
 }
 
 func NewInClusterClient() (*Client, error) {
-	// rest.InClusterConfig() reads from:
-	// 1. /var/run/secrets/kubernetes.io/serviceaccount/token (for auth)
-	// 2. /var/run/secrets/kubernetes.io/serviceaccount/ca.crt (for TLS)
-	// 3. KUBERNETES_SERVICE_HOST and KUBERNETES_SERVICE_PORT env vars
 	config, err := rest.InClusterConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get in-cluster config: %w", err)
 	}
 
-	// Create a controller-runtime client with our scheme (includes CRDs)
 	k8sClient, err := client.New(config, client.Options{Scheme: scheme})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kubernetes client: %w", err)
@@ -60,44 +54,4 @@ func NewInClusterClient() (*Client, error) {
 	return &Client{
 		client: k8sClient,
 	}, nil
-}
-
-// PipelineInfo contains UnstructuredDataPipeline CR
-type PipelineInfo struct {
-	Name      string `json:"name"`
-	Namespace string `json:"namespace"`
-	Status    string `json:"status,omitempty"`
-	Message   string `json:"message,omitempty"`
-}
-
-// ListPipelines returns all UnstructuredDataPipeline CRs in the unstructured-controller-namespace
-func (c *Client) ListPipelines(ctx context.Context) ([]PipelineInfo, error) {
-	pipelineList := &operatorv1alpha1.UnstructuredDataPipelineList{}
-
-	err := c.client.List(ctx, pipelineList, &client.ListOptions{
-		Namespace: "unstructured-controller-namespace",
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list pipelines: %w", err)
-	}
-
-	result := make([]PipelineInfo, len(pipelineList.Items))
-	for i, pipeline := range pipelineList.Items {
-		info := PipelineInfo{
-			Name:      pipeline.Name,
-			Namespace: pipeline.Namespace,
-		}
-
-		for _, condition := range pipeline.Status.Conditions {
-			if condition.Type == "UnstructuredDataPipelineReady" {
-				info.Status = string(condition.Status)
-				info.Message = condition.Message
-				break
-			}
-		}
-
-		result[i] = info
-	}
-
-	return result, nil
 }

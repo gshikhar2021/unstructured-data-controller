@@ -33,67 +33,11 @@ spec:
           containerPort: 8080
           protocol: TCP
 
-        env:
-        - name: SSO_AUTHORIZATION_URL
-          valueFrom:
-            configMapKeyRef:
-              name: mcp-server-config
-              key: SSO_AUTHORIZATION_URL
-        - name: SSO_TOKEN_URL
-          valueFrom:
-            configMapKeyRef:
-              name: mcp-server-config
-              key: SSO_TOKEN_URL
-        - name: SSO_INTROSPECTION_URL
-          valueFrom:
-            configMapKeyRef:
-              name: mcp-server-config
-              key: SSO_INTROSPECTION_URL
-        - name: SSO_ISSUER_HOST
-          valueFrom:
-            configMapKeyRef:
-              name: mcp-server-config
-              key: SSO_ISSUER_HOST
-        - name: SSO_CALLBACK_URL
-          valueFrom:
-            configMapKeyRef:
-              name: mcp-server-config
-              key: SSO_CALLBACK_URL
-        - name: MCP_SERVER_PORT
-          valueFrom:
-            configMapKeyRef:
-              name: mcp-server-config
-              key: MCP_SERVER_PORT
-        - name: SSO_CLIENT_ID
-          valueFrom:
-            secretKeyRef:
-              name: mcp-server-secret
-              key: SSO_CLIENT_ID
-        - name: SSO_CLIENT_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: mcp-server-secret
-              key: SSO_CLIENT_SECRET
-        - name: SNOWFLAKE_ACCOUNT
-          valueFrom:
-            configMapKeyRef:
-              name: mcp-server-config
-              key: SNOWFLAKE_ACCOUNT
-        - name: EMBEDDING_ENDPOINT
-          valueFrom:
-            secretKeyRef:
-              name: mcp-server-secret
-              key: EMBEDDING_ENDPOINT
-        - name: EMBEDDING_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: mcp-server-secret
-              key: EMBEDDING_API_KEY
-        - name: EMBEDDING_MODEL_NAME
-          valueFrom:
-            secretKeyRef:
-              name: mcp-server-secret
-              key: EMBEDDING_MODEL_NAME
+        envFrom:
+        - configMapRef:
+            name: mcp-server-config
+        - secretRef:
+            name: mcp-server-secret
 
         livenessProbe:
           httpGet:
