@@ -20,13 +20,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"strconv"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/auth"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/embedding"
+	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/logger"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/snowflake"
 )
 
@@ -45,10 +46,17 @@ If udp_database, schema, or table are not known, call list_unstructured_data_pip
 On error: report the exact error to the user and STOP. Do NOT retry with other pipelines or databases.
 On follow-up: if the user is not satisfied, ask them which pipeline to search. Do NOT automatically try other pipelines.`,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, args getChunksArgs) (*mcp.CallToolResult, any, error) {
-		slog.Info("get_chunks: tool invoked", "udp_database", args.UDPDatabase, "schema", args.Schema, "table", args.Table)
+		username := ""
+		if tokenInfo, ok := auth.TokenInfoFromContext(ctx); ok {
+			username = tokenInfo.Username
+		}
+		ctx = logger.NewContext(ctx, uuid.NewString(), "get_chunks_for_embeddings", username)
+		log := logger.FromContext(ctx)
+
+		log.Info("tool invoked", "udp_database", args.UDPDatabase, "schema", args.Schema, "table", args.Table)
 
 		if args.UDPDatabase == "" || args.Schema == "" || args.Table == "" || args.Query == "" {
-			slog.Error("get_chunks: missing required parameters", "udp_database", args.UDPDatabase, "schema", args.Schema, "table", args.Table, "query_empty", args.Query == "")
+			log.Error("missing required parameters", "udp_database", args.UDPDatabase, "schema", args.Schema, "table", args.Table, "query_empty", args.Query == "")
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{Text: "Error: udp_database, schema, table, and query are required. Call list_unstructured_data_pipelines_for_user first to get the database, schema, and table values."}},
 				IsError: true,
@@ -57,41 +65,41 @@ On follow-up: if the user is not satisfied, ask them which pipeline to search. D
 
 		oauthToken, ok := auth.AccessTokenFromContext(ctx)
 		if !ok {
-			slog.Error("get_chunks: OAuth token not found in context")
+			log.Error("oauth token not found in context")
 			return &mcp.CallToolResult{
-				Content: []mcp.Content{&mcp.TextContent{Text: "Error: OAuth token not found in context"}},
+				Content: []mcp.Content{&mcp.TextContent{Text: "Error: oauth token not found in context"}},
 				IsError: true,
 			}, nil, nil
 		}
 
-		slog.Info("get_chunks: generating embedding for query")
+		log.Info("generating embedding for query")
 		result, err := embeddingClient.GenerateEmbeddings(ctx, []string{args.Query}, "float")
 		if err != nil {
-			slog.Error("get_chunks: failed to generate embedding", "error", err)
+			log.Error("failed to generate embedding", "error", err)
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("Error generating embedding: %v", err)}},
 				IsError: true,
 			}, nil, nil
 		}
 
-		if result.Count == 0 || len(result.Embeddings) == 0 {
-			slog.Error("get_chunks: embedding API returned no vectors")
+		if result == nil || result.Count == 0 || len(result.Embeddings) == 0 {
+			log.Error("embedding API returned no vectors")
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{Text: "Error: embedding API returned no vectors"}},
 				IsError: true,
 			}, nil, nil
 		}
-		slog.Info("get_chunks: embedding generated", "vector_dimensions", len(result.Embeddings[0]))
+		log.Info("embedding generated", "vector_dimensions", len(result.Embeddings[0]))
 
 		vectorLiteral := formatVectorLiteral(result.Embeddings[0])
 		databaseName := strings.ToUpper(strings.ReplaceAll(args.UDPDatabase, "-", "_"))
 		schemaName := strings.ToUpper(args.Schema)
 		tableName := strings.ToUpper(args.Table)
 
-		slog.Info("get_chunks: searching snowflake", "database", databaseName, "schema", schemaName, "table", tableName)
+		log.Info("searching snowflake", "database", databaseName, "schema", schemaName, "table", tableName)
 		chunks, err := snowflake.SearchChunks(ctx, oauthToken, databaseName, schemaName, tableName, vectorLiteral)
 		if err != nil {
-			slog.Error("get_chunks: failed to search chunks in snowflake", "error", err, "database", databaseName, "schema", schemaName, "table", tableName)
+			log.Error("failed to search chunks in snowflake", "error", err, "database", databaseName, "schema", schemaName, "table", tableName)
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("Error searching chunks: %v", err)}},
 				IsError: true,
@@ -100,14 +108,14 @@ On follow-up: if the user is not satisfied, ask them which pipeline to search. D
 
 		jsonBytes, err := json.Marshal(chunks)
 		if err != nil {
-			slog.Error("get_chunks: failed to marshal result", "error", err)
+			log.Error("failed to marshal result", "error", err)
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("Error marshaling result: %v", err)}},
 				IsError: true,
 			}, nil, nil
 		}
 
-		slog.Info("get_chunks: completed successfully", "database", databaseName, "chunks_found", len(chunks))
+		log.Info("completed successfully", "database", databaseName, "chunks_found", len(chunks))
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{
 				Text: fmt.Sprintf("Found %d chunks for query in %s.%s.%s:\n%s", len(chunks), databaseName, schemaName, tableName, string(jsonBytes)),

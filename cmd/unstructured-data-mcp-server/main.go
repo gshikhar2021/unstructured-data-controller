@@ -32,6 +32,7 @@ import (
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/auth"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/embedding"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/k8sclient"
+	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/logger"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
@@ -42,11 +43,8 @@ const (
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	}))
-	slog.SetDefault(logger)
-	ctrl.SetLogger(logr.FromSlogHandler(logger.Handler()))
+	logger.Init()
+	ctrl.SetLogger(logr.FromSlogHandler(slog.Default().Handler()))
 
 	oauthCfg, err := auth.NewOAuthConfigFromEnv()
 	if err != nil {
@@ -86,8 +84,8 @@ func main() {
 	mcptools.RegisterGetChunksForEmbeddings(mcpServer, embeddingClient)
 
 	oauthStore := auth.NewOAuthStore()
-	oauthMiddleware := auth.NewMiddleware(provider, logger)
-	oauthServer := auth.NewOAuthServer(provider, oauthCfg.CallbackURL, oauthStore, logger)
+	oauthMiddleware := auth.NewMiddleware(provider, slog.Default())
+	oauthServer := auth.NewOAuthServer(provider, oauthCfg.CallbackURL, oauthStore, slog.Default())
 
 	mcpHandler := mcp.NewStreamableHTTPHandler(
 		func(_ *http.Request) *mcp.Server { return mcpServer },

@@ -20,11 +20,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 
+	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/auth"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/k8sclient"
+	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/logger"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/snowflake"
 )
 
@@ -40,25 +41,32 @@ func RegisterListPipelines(s *mcp.Server, k8sClient *k8sclient.Client) {
 		Name:        "list_unstructured_data_pipelines_for_user",
 		Description: "List all UnstructuredDataPipeline custom resources and Snowflake databases the authenticated user has access to.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
-		slog.Info("list_pipelines: tool invoked")
+		username := ""
+		if tokenInfo, ok := auth.TokenInfoFromContext(ctx); ok {
+			username = tokenInfo.Username
+		}
+		ctx = logger.NewContext(ctx, uuid.NewString(), "list_unstructured_data_pipelines_for_user", username)
+		log := logger.FromContext(ctx)
+
+		log.Info("tool invoked")
 
 		oauthToken, ok := auth.AccessTokenFromContext(ctx)
 		if !ok {
-			slog.Error("list_pipelines: OAuth token not found in context")
+			log.Error("oauth token not found in context")
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{
-					Text: "Error: OAuth token not found in context",
+					Text: "Error: oauth token not found in context",
 				}},
 				IsError: true,
 			}, nil, nil
 		}
 
-		var pipelines []k8sclient.PipelineInfo
+		pipelines := []k8sclient.PipelineInfo{}
 		if k8sClient != nil {
 			var err error
 			pipelines, err = k8sClient.ListPipelines(ctx)
 			if err != nil {
-				slog.Error("list_pipelines: failed to list pipelines from kubernetes", "error", err)
+				log.Error("failed to list pipelines from kubernetes", "error", err)
 				return &mcp.CallToolResult{
 					Content: []mcp.Content{&mcp.TextContent{
 						Text: fmt.Sprintf("Error listing pipelines: %v", err),
@@ -66,14 +74,14 @@ func RegisterListPipelines(s *mcp.Server, k8sClient *k8sclient.Client) {
 					IsError: true,
 				}, nil, nil
 			}
-			slog.Info("list_pipelines: listed pipelines from kubernetes", "count", len(pipelines))
+			log.Info("listed pipelines from kubernetes", "count", len(pipelines))
 		} else {
-			slog.Warn("list_pipelines: kubernetes client is nil, skipping pipeline listing")
+			log.Warn("kubernetes client is nil, skipping pipeline listing")
 		}
 
 		databases, err := snowflake.ShowDatabases(ctx, oauthToken)
 		if err != nil {
-			slog.Error("list_pipelines: failed to list databases from snowflake", "error", err)
+			log.Error("failed to list databases from snowflake", "error", err)
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{
 					Text: fmt.Sprintf("Error querying Snowflake: %v", err),
@@ -81,7 +89,7 @@ func RegisterListPipelines(s *mcp.Server, k8sClient *k8sclient.Client) {
 				IsError: true,
 			}, nil, nil
 		}
-		slog.Info("list_pipelines: listed databases from snowflake", "count", len(databases))
+		log.Info("listed databases from snowflake", "count", len(databases))
 
 		result := CombinedResult{
 			Pipelines: pipelines,
@@ -90,7 +98,7 @@ func RegisterListPipelines(s *mcp.Server, k8sClient *k8sclient.Client) {
 
 		jsonBytes, err := json.Marshal(result)
 		if err != nil {
-			slog.Error("list_pipelines: failed to marshal result", "error", err)
+			log.Error("failed to marshal result", "error", err)
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{
 					Text: fmt.Sprintf("Error marshaling result: %v", err),
@@ -99,7 +107,7 @@ func RegisterListPipelines(s *mcp.Server, k8sClient *k8sclient.Client) {
 			}, nil, nil
 		}
 
-		slog.Info("list_pipelines: completed successfully", "pipelines", len(pipelines), "databases", len(databases))
+		log.Info("completed successfully", "pipelines", len(pipelines), "databases", len(databases))
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{
 				Text: fmt.Sprintf("Found %d pipeline(s) and %d database(s):\n%s\n\n"+
