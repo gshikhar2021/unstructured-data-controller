@@ -21,9 +21,11 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/auth"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/k8sclient"
+	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/logger"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/snowflake"
 )
 
@@ -37,25 +39,34 @@ type CombinedResult struct {
 func RegisterListPipelines(s *mcp.Server, k8sClient *k8sclient.Client) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "list_unstructured_data_pipelines_for_user",
-		Description: "List all UnstructuredDataPipeline custom resources and Snowflake databases the authenticated user has access to",
+		Description: "List all UnstructuredDataPipeline custom resources and Snowflake databases the authenticated user has access to.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
-		// Extract OAuth token from context
+		username := ""
+		if tokenInfo, ok := auth.TokenInfoFromContext(ctx); ok {
+			username = tokenInfo.Username
+		}
+		ctx = logger.NewContext(ctx, uuid.NewString(), "list_unstructured_data_pipelines_for_user", username)
+		log := logger.FromContext(ctx)
+
+		log.Info("tool invoked")
+
 		oauthToken, ok := auth.AccessTokenFromContext(ctx)
 		if !ok {
+			log.Error("oauth token not found in context")
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{
-					Text: "Error: OAuth token not found in context",
+					Text: "Error: oauth token not found in context",
 				}},
 				IsError: true,
 			}, nil, nil
 		}
 
-		// List Kubernetes UnstructuredDataPipeline CRs
-		var pipelines []k8sclient.PipelineInfo
+		pipelines := []k8sclient.PipelineInfo{}
 		if k8sClient != nil {
 			var err error
 			pipelines, err = k8sClient.ListPipelines(ctx)
 			if err != nil {
+				log.Error("failed to list pipelines from kubernetes", "error", err)
 				return &mcp.CallToolResult{
 					Content: []mcp.Content{&mcp.TextContent{
 						Text: fmt.Sprintf("Error listing pipelines: %v", err),
@@ -63,11 +74,14 @@ func RegisterListPipelines(s *mcp.Server, k8sClient *k8sclient.Client) {
 					IsError: true,
 				}, nil, nil
 			}
+			log.Info("listed pipelines from kubernetes", "count", len(pipelines))
+		} else {
+			log.Warn("kubernetes client is nil, skipping pipeline listing")
 		}
 
-		// Query Snowflake databases using the user's OAuth token
 		databases, err := snowflake.ShowDatabases(ctx, oauthToken)
 		if err != nil {
+			log.Error("failed to list databases from snowflake", "error", err)
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{
 					Text: fmt.Sprintf("Error querying Snowflake: %v", err),
@@ -75,8 +89,8 @@ func RegisterListPipelines(s *mcp.Server, k8sClient *k8sclient.Client) {
 				IsError: true,
 			}, nil, nil
 		}
+		log.Info("listed databases from snowflake", "count", len(databases))
 
-		// Combine results
 		result := CombinedResult{
 			Pipelines: pipelines,
 			Databases: databases,
@@ -84,6 +98,7 @@ func RegisterListPipelines(s *mcp.Server, k8sClient *k8sclient.Client) {
 
 		jsonBytes, err := json.Marshal(result)
 		if err != nil {
+			log.Error("failed to marshal result", "error", err)
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{
 					Text: fmt.Sprintf("Error marshaling result: %v", err),
@@ -92,9 +107,14 @@ func RegisterListPipelines(s *mcp.Server, k8sClient *k8sclient.Client) {
 			}, nil, nil
 		}
 
+		log.Info("completed successfully", "pipelines", len(pipelines), "databases", len(databases))
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{
-				Text: fmt.Sprintf("Found %d pipeline(s) and %d database(s):\n%s",
+				Text: fmt.Sprintf("Found %d pipeline(s) and %d database(s):\n%s\n\n"+
+					"IMPORTANT: If you are selecting a pipeline for a search query, you MUST follow these rules:\n"+
+					"- If EXACTLY ONE pipeline matches the user's question, use it.\n"+
+					"- If MORE THAN ONE pipeline could match, STOP and ask the user which one to use. Do NOT pick one yourself.\n"+
+					"- If NONE match, tell the user. Do NOT try all pipelines.",
 					len(pipelines), len(databases), string(jsonBytes)),
 			}},
 		}, nil, nil
