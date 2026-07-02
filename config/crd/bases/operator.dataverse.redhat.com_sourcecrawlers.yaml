@@ -65,6 +65,37 @@ spec:
                 description: SourceCrawlerConfig configures where to read unstructured
                   data from.
                 properties:
+                  googleDriveConfig:
+                    description: |-
+                      GDriveConfig configures Google Drive folder crawling at the pipeline level.
+                      Controller-level settings (maxRetries, concurrency, LDAP) are in ControllerConfig.
+                    properties:
+                      folders:
+                        description: FolderIDs is the list of Google Drive folder
+                          IDs to crawl recursively.
+                        items:
+                          properties:
+                            url:
+                              type: string
+                          required:
+                          - url
+                          type: object
+                        minItems: 1
+                        type: array
+                      skipFolders:
+                        description: SkipFolderNames is an optional list of folder
+                          names to skip during crawling.
+                        items:
+                          properties:
+                            pattern:
+                              type: string
+                          required:
+                          - pattern
+                          type: object
+                        type: array
+                    required:
+                    - folders
+                    type: object
                   s3Config:
                     description: S3Config configures an S3 bucket and optional prefix.
                     properties:

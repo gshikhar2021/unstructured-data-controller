@@ -21,7 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// sample spec:
+// sample spec (S3 source):
 //
 //	spec:
 //	  secretRef: pipeline-secret             # k8s secret with source/destination AWS credentials
@@ -33,6 +33,21 @@ import (
 //	        s3Config:
 //	          bucket: data-ingestion-bucket
 //	          prefix: documents/
+//
+// sample spec (Google Drive source):
+//
+//	spec:
+//	  secretRef: pipeline-secret             # k8s secret with GOOGLE_SERVICE_ACCOUNT_JSON + destination AWS credentials
+//	  stages:
+//	    - name: crawl
+//	      type: SourceCrawler
+//	      sourceCrawlerConfig:
+//	        type: googleDrive
+//	        googleDriveConfig:
+//	          folders:
+//	            - url: "https://drive.google.com/drive/folders/1ABCdef_example_folder_id"
+//	          skipFolders:
+//	            - pattern: ".archive"
 //	    - name: convert
 //	      type: DocumentProcessor
 //	      dependsOn:
@@ -73,6 +88,7 @@ type (
 
 const (
 	TypeS3                             UnstructuredDataType = "s3"
+	TypeGoogleDrive                    UnstructuredDataType = "googleDrive"
 	ChunkingStrategyRecursiveCharacter ChunkingStrategy     = "recursiveCharacterTextSplitter"
 	ChunkingStrategyMarkdown           ChunkingStrategy     = "markdownTextSplitter"
 	ChunkingStrategyToken              ChunkingStrategy     = "tokenTextSplitter"
@@ -143,8 +159,28 @@ type PipelineStage struct {
 
 // SourceCrawlerConfig configures where to read unstructured data from.
 type SourceCrawlerConfig struct {
-	Type     UnstructuredDataType `json:"type,omitempty"`
-	S3Config S3Config             `json:"s3Config,omitempty"`
+	Type              UnstructuredDataType `json:"type,omitempty"`
+	S3Config          S3Config             `json:"s3Config,omitempty"`
+	GoogleDriveConfig *GoogleDriveConfig   `json:"googleDriveConfig,omitempty"`
+}
+
+// GDriveConfig configures Google Drive folder crawling at the pipeline level.
+// Controller-level settings (maxRetries, concurrency, LDAP) are in ControllerConfig.
+type GoogleDriveConfig struct {
+	// FolderIDs is the list of Google Drive folder IDs to crawl recursively.
+	// +kubebuilder:validation:MinItems=1
+	Folders []GoogleDriveFolders `json:"folders"`
+	// SkipFolderNames is an optional list of folder names to skip during crawling.
+	// +optional
+	SkipFolders []SkipFolders `json:"skipFolders,omitempty"`
+}
+
+type GoogleDriveFolders struct {
+	URL string `json:"url"`
+}
+
+type SkipFolders struct {
+	Pattern string `json:"pattern"`
 }
 
 // DestinationSyncerConfig configures where to write processed data.
