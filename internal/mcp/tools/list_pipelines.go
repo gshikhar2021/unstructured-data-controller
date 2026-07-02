@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/auth"
@@ -37,11 +38,13 @@ type CombinedResult struct {
 func RegisterListPipelines(s *mcp.Server, k8sClient *k8sclient.Client) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "list_unstructured_data_pipelines_for_user",
-		Description: "List all UnstructuredDataPipeline custom resources and Snowflake databases the authenticated user has access to",
+		Description: "List all UnstructuredDataPipeline custom resources and Snowflake databases the authenticated user has access to.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
-		// Extract OAuth token from context
+		slog.Info("list_pipelines: tool invoked")
+
 		oauthToken, ok := auth.AccessTokenFromContext(ctx)
 		if !ok {
+			slog.Error("list_pipelines: OAuth token not found in context")
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{
 					Text: "Error: OAuth token not found in context",
@@ -50,12 +53,12 @@ func RegisterListPipelines(s *mcp.Server, k8sClient *k8sclient.Client) {
 			}, nil, nil
 		}
 
-		// List Kubernetes UnstructuredDataPipeline CRs
 		var pipelines []k8sclient.PipelineInfo
 		if k8sClient != nil {
 			var err error
 			pipelines, err = k8sClient.ListPipelines(ctx)
 			if err != nil {
+				slog.Error("list_pipelines: failed to list pipelines from kubernetes", "error", err)
 				return &mcp.CallToolResult{
 					Content: []mcp.Content{&mcp.TextContent{
 						Text: fmt.Sprintf("Error listing pipelines: %v", err),
@@ -63,11 +66,14 @@ func RegisterListPipelines(s *mcp.Server, k8sClient *k8sclient.Client) {
 					IsError: true,
 				}, nil, nil
 			}
+			slog.Info("list_pipelines: listed pipelines from kubernetes", "count", len(pipelines))
+		} else {
+			slog.Warn("list_pipelines: kubernetes client is nil, skipping pipeline listing")
 		}
 
-		// Query Snowflake databases using the user's OAuth token
 		databases, err := snowflake.ShowDatabases(ctx, oauthToken)
 		if err != nil {
+			slog.Error("list_pipelines: failed to list databases from snowflake", "error", err)
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{
 					Text: fmt.Sprintf("Error querying Snowflake: %v", err),
@@ -75,8 +81,8 @@ func RegisterListPipelines(s *mcp.Server, k8sClient *k8sclient.Client) {
 				IsError: true,
 			}, nil, nil
 		}
+		slog.Info("list_pipelines: listed databases from snowflake", "count", len(databases))
 
-		// Combine results
 		result := CombinedResult{
 			Pipelines: pipelines,
 			Databases: databases,
@@ -84,6 +90,7 @@ func RegisterListPipelines(s *mcp.Server, k8sClient *k8sclient.Client) {
 
 		jsonBytes, err := json.Marshal(result)
 		if err != nil {
+			slog.Error("list_pipelines: failed to marshal result", "error", err)
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{
 					Text: fmt.Sprintf("Error marshaling result: %v", err),
@@ -92,9 +99,14 @@ func RegisterListPipelines(s *mcp.Server, k8sClient *k8sclient.Client) {
 			}, nil, nil
 		}
 
+		slog.Info("list_pipelines: completed successfully", "pipelines", len(pipelines), "databases", len(databases))
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{
-				Text: fmt.Sprintf("Found %d pipeline(s) and %d database(s):\n%s",
+				Text: fmt.Sprintf("Found %d pipeline(s) and %d database(s):\n%s\n\n"+
+					"IMPORTANT: If you are selecting a pipeline for a search query, you MUST follow these rules:\n"+
+					"- If EXACTLY ONE pipeline matches the user's question, use it.\n"+
+					"- If MORE THAN ONE pipeline could match, STOP and ask the user which one to use. Do NOT pick one yourself.\n"+
+					"- If NONE match, tell the user. Do NOT try all pipelines.",
 					len(pipelines), len(databases), string(jsonBytes)),
 			}},
 		}, nil, nil

@@ -166,11 +166,57 @@ The full authorization flow follows the [MCP Authorization specification (2025-1
 | `GET`                   | `/healthz`                                | None         | Liveness probe                           |
 | `GET`                   | `/readyz`                                 | None         | Readiness probe                          |
 
+## Tools
+
+### `list_unstructured_data_pipelines_for_user`
+
+Lists all UnstructuredDataPipeline custom resources and Snowflake databases the authenticated user has access to.
+
+**Parameters:** None (uses OAuth token from context).
+
+**Returns:** A combined JSON result containing:
+
+- `pipelines` — array of pipelines with:
+  - `name` — pipeline CR name
+  - `namespace` — Kubernetes namespace
+  - `description` — human-readable summary of what the pipeline does
+  - `database` — Snowflake database name (from the stage's `queryConfig`, if set)
+  - `schema` — Snowflake schema name (from the stage's `queryConfig`, if set)
+  - `table` — Snowflake table name (from the stage's `queryConfig`, if set)
+  - `status` — pipeline readiness status
+  - `message` — status message
+- `databases` — array of Snowflake databases accessible to the user
+
+### `get_chunks_for_embeddings`
+
+Searches for relevant text chunks in a data product using vector cosine similarity. Returns the top 5 matching chunks for the given query.
+
+**Parameters:**
+
+| Parameter      | Required | Description                                                                                                                                   |
+| -------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `udp_database` | Yes      | Name of the data product database. If not known, call `list_unstructured_data_pipelines_for_user` first and pick the matching pipeline.       |
+| `schema`       | Yes      | Snowflake schema name. If not known, call `list_unstructured_data_pipelines_for_user` first.                                                  |
+| `table`        | Yes      | Snowflake table name. If not known, call `list_unstructured_data_pipelines_for_user` first.                                                   |
+| `query`        | Yes      | The search query to find relevant chunks.                                                                                                     |
+
+**Typical agent flow:**
+
+1. User asks a question (no database specified).
+2. Agent calls `list_unstructured_data_pipelines_for_user` to get pipeline descriptions, database names, schemas, and tables.
+3. Agent matches the user's question to a pipeline based on its description.
+4. If confident, agent calls `get_chunks_for_embeddings` with the resolved `udp_database`, `schema`, and `table`.
+5. If ambiguous (multiple pipelines could match), agent asks the user to clarify.
+
 ## Package Structure
 
 ```
 cmd/unstructured-data-mcp-server/
   main.go                  ← entry point, wiring
+
+internal/mcp/tools/
+  list_pipelines.go        ← list_unstructured_data_pipelines_for_user tool
+  get_chunks.go            ← get_chunks_for_embeddings tool
 
 pkg/auth/
   provider.go              ← Provider interface (extensible)

@@ -28,10 +28,14 @@ import (
 const defaultPipelineNamespace = "unstructured-controller-namespace"
 
 type PipelineInfo struct {
-	Name      string `json:"name"`
-	Namespace string `json:"namespace"`
-	Status    string `json:"status,omitempty"`
-	Message   string `json:"message,omitempty"`
+	Name        string `json:"name"`
+	Namespace   string `json:"namespace"`
+	Description string `json:"description"`
+	Database    string `json:"database,omitempty"`
+	Schema      string `json:"schema,omitempty"`
+	Table       string `json:"table,omitempty"`
+	Status      string `json:"status,omitempty"`
+	Message     string `json:"message,omitempty"`
 }
 
 func (c *Client) ListPipelines(ctx context.Context) ([]PipelineInfo, error) {
@@ -52,8 +56,18 @@ func (c *Client) ListPipelines(ctx context.Context) ([]PipelineInfo, error) {
 	result := make([]PipelineInfo, len(pipelineList.Items))
 	for i, pipeline := range pipelineList.Items {
 		info := PipelineInfo{
-			Name:      pipeline.Name,
-			Namespace: pipeline.Namespace,
+			Name:        pipeline.Name,
+			Namespace:   pipeline.Namespace,
+			Description: pipeline.Spec.Description,
+		}
+
+		for _, stage := range pipeline.Spec.Stages {
+			if stage.QueryConfig != nil && stage.QueryConfig.Snowflake != nil {
+				info.Database = stage.QueryConfig.Snowflake.Database
+				info.Schema = stage.QueryConfig.Snowflake.Schema
+				info.Table = stage.QueryConfig.Snowflake.Table
+				break
+			}
 		}
 
 		for _, condition := range pipeline.Status.Conditions {
