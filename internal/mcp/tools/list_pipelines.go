@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -28,12 +29,6 @@ import (
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/logger"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/snowflake"
 )
-
-// CombinedResult contains both Kubernetes pipelines and Snowflake databases
-type CombinedResult struct {
-	Pipelines []k8sclient.PipelineInfo `json:"pipelines"`
-	Databases []snowflake.DatabaseInfo `json:"databases"`
-}
 
 // RegisterListPipelines registers the list_unstructured_data_pipelines_for_user MCP tool
 func RegisterListPipelines(s *mcp.Server, k8sClient *k8sclient.Client) {
@@ -79,6 +74,15 @@ func RegisterListPipelines(s *mcp.Server, k8sClient *k8sclient.Client) {
 			log.Warn("kubernetes client is nil, skipping pipeline listing")
 		}
 
+		// Build map of pipeline database names to pipeline info
+		pipelinesByDB := make(map[string][]k8sclient.PipelineInfo, len(pipelines))
+		for _, p := range pipelines {
+			if p.Database != "" {
+				dbKey := strings.ToUpper(p.Database)
+				pipelinesByDB[dbKey] = append(pipelinesByDB[dbKey], p)
+			}
+		}
+
 		databases, err := snowflake.ShowDatabases(ctx, oauthToken)
 		if err != nil {
 			log.Error("failed to list databases from snowflake", "error", err)
@@ -91,12 +95,20 @@ func RegisterListPipelines(s *mcp.Server, k8sClient *k8sclient.Client) {
 		}
 		log.Info("listed databases from snowflake", "count", len(databases))
 
-		result := CombinedResult{
-			Pipelines: pipelines,
-			Databases: databases,
+		// Intersect: keep only pipelines whose database the user has access to
+		userDBs := make(map[string]bool, len(databases))
+		for _, db := range databases {
+			userDBs[strings.ToUpper(db.Name)] = true
 		}
 
-		jsonBytes, err := json.Marshal(result)
+		var accessible []k8sclient.PipelineInfo
+		for dbName, plist := range pipelinesByDB {
+			if userDBs[dbName] {
+				accessible = append(accessible, plist...)
+			}
+		}
+
+		jsonBytes, err := json.Marshal(accessible)
 		if err != nil {
 			log.Error("failed to marshal result", "error", err)
 			return &mcp.CallToolResult{
@@ -107,15 +119,15 @@ func RegisterListPipelines(s *mcp.Server, k8sClient *k8sclient.Client) {
 			}, nil, nil
 		}
 
-		log.Info("completed successfully", "pipelines", len(pipelines), "databases", len(databases))
+		log.Info("completed successfully", "total_pipelines", len(pipelines), "accessible_pipelines", len(accessible))
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{
-				Text: fmt.Sprintf("Found %d pipeline(s) and %d database(s):\n%s\n\n"+
+				Text: fmt.Sprintf("Found %d accessible pipeline(s):\n%s\n\n"+
 					"IMPORTANT: If you are selecting a pipeline for a search query, you MUST follow these rules:\n"+
 					"- If EXACTLY ONE pipeline matches the user's question, use it.\n"+
 					"- If MORE THAN ONE pipeline could match, STOP and ask the user which one to use. Do NOT pick one yourself.\n"+
 					"- If NONE match, tell the user. Do NOT try all pipelines.",
-					len(pipelines), len(databases), string(jsonBytes)),
+					len(accessible), string(jsonBytes)),
 			}},
 		}, nil, nil
 	})
