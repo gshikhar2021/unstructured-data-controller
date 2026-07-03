@@ -27,25 +27,28 @@ import (
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/gdrive/ldap"
 )
 
-// Client wraps Google Drive, LDAP, and cache clients to provide
+// Client wraps Controller-GoogleClient, Google Drive, LDAP, and cache clients to provide
 // folder crawling and permission resolution functionality.
 type Client struct {
-	googleClient google.GoogleClient
-	ldapClient   ldap.Client
-	cacheClient  cache.Cache
-	groupFlight  singleflight.Group
+	globalGoogleClient google.GoogleClient
+	googleClient       google.GoogleClient
+	ldapClient         ldap.Client
+	cacheClient        cache.Cache
+	groupFlight        singleflight.Group
 }
 
 // NewClient creates a new gdrive Client with the provided dependencies.
 func NewClient(
 	googleClient google.GoogleClient,
+	globalGoogleClient google.GoogleClient,
 	ldapClient ldap.Client,
 	cacheClient cache.Cache,
 ) (*Client, error) {
 	return &Client{
-		googleClient: googleClient,
-		ldapClient:   ldapClient,
-		cacheClient:  cacheClient,
+		globalGoogleClient: globalGoogleClient,
+		googleClient:       googleClient,
+		ldapClient:         ldapClient,
+		cacheClient:        cacheClient,
 	}, nil
 }
 

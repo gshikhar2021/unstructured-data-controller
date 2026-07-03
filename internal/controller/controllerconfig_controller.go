@@ -35,6 +35,7 @@ import (
 	pkgcache "github.com/redhat-data-and-ai/unstructured-data-controller/pkg/cache"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/cache/inmemory"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/docling"
+	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/gdrive/google"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/gdrive/ldap"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/langchain"
 )
@@ -48,6 +49,7 @@ var (
 	LDAPClient                             ldap.Client
 	CacheClient                            pkgcache.Cache
 	GoogleDriveControllerCfg               *operatorv1alpha1.GoogleDriveControllerConfig
+	GlobalGoogleClient                     google.GoogleClient
 )
 
 // ControllerConfigReconciler reconciles a ControllerConfig object
@@ -149,6 +151,16 @@ func (r *ControllerConfigReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	}
 
 	GoogleDriveControllerCfg = config.Spec.GoogleDriveConfig
+
+	if credJSON := secret.Data["CONTROLLER_GOOGLE_SERVICE_ACCOUNT_JSON"]; len(credJSON) > 0 {
+		globalClient, err := google.NewClientFromJSON(ctx, credJSON)
+		if err != nil {
+			logger.Error(err, "failed to create global Google client for group resolution")
+			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+		}
+		GlobalGoogleClient = globalClient
+		logger.Info("Global Google client initialized for group membership resolution")
+	}
 
 	if config.Spec.UnstructuredDataPipelineResyncInterval != nil {
 		UnstructuredDataPipelineResyncInterval = config.Spec.UnstructuredDataPipelineResyncInterval

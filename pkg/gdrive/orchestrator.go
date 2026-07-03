@@ -150,7 +150,7 @@ func (o *Orchestrator) processFileIDs(
 	}
 
 	client, err := NewClient(
-		googleClient, ldapClient, cacheClient)
+		googleClient, nil, ldapClient, cacheClient)
 	if err != nil {
 		return fmt.Errorf(
 			"failed to create Drive client: %w", err)
@@ -194,7 +194,7 @@ func (o *Orchestrator) processFolderIDs(
 	}
 
 	client, err := NewClient(
-		googleClient, ldapClient, cacheClient)
+		googleClient, nil, ldapClient, cacheClient)
 	if err != nil {
 		return fmt.Errorf(
 			"failed to create Drive client: %w", err)
