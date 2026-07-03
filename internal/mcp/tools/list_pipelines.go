@@ -75,10 +75,11 @@ func RegisterListPipelines(s *mcp.Server, k8sClient *k8sclient.Client) {
 		}
 
 		// Build map of pipeline database names to pipeline info
-		pipelinesByDB := make(map[string]k8sclient.PipelineInfo, len(pipelines))
+		pipelinesByDB := make(map[string][]k8sclient.PipelineInfo, len(pipelines))
 		for _, p := range pipelines {
 			if p.Database != "" {
-				pipelinesByDB[strings.ToUpper(p.Database)] = p
+				dbKey := strings.ToUpper(p.Database)
+				pipelinesByDB[dbKey] = append(pipelinesByDB[dbKey], p)
 			}
 		}
 
@@ -101,9 +102,9 @@ func RegisterListPipelines(s *mcp.Server, k8sClient *k8sclient.Client) {
 		}
 
 		var accessible []k8sclient.PipelineInfo
-		for dbName, p := range pipelinesByDB {
+		for dbName, plist := range pipelinesByDB {
 			if userDBs[dbName] {
-				accessible = append(accessible, p)
+				accessible = append(accessible, plist...)
 			}
 		}
 
