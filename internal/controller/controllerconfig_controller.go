@@ -152,7 +152,7 @@ func (r *ControllerConfigReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 	GoogleDriveControllerCfg = config.Spec.GoogleDriveConfig
 
-	if credJSON := secret.Data["CONTROLLER_GOOGLE_SERVICE_ACCOUNT_JSON"]; len(credJSON) > 0 {
+	if credJSON, ok := secret.Data["GROUPS_READER_GOOGLE_SERVICE_ACCOUNT_JSON"]; ok {
 		globalClient, err := google.NewClientFromJSON(ctx, credJSON)
 		if err != nil {
 			logger.Error(err, "failed to create global Google client for group resolution")

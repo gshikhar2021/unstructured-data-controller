@@ -138,11 +138,7 @@ func (c *Client) GetFilePermissions(
 							}
 						}
 
-						groupClient := c.googleClient
-						if c.globalGoogleClient != nil {
-							groupClient = c.globalGoogleClient
-						}
-						members, err := groupClient.GetGroupMembers(
+						members, err := c.globalGoogleClient.GetGroupMembers(
 							ctx, p.EmailAddress)
 						if err != nil {
 							return nil, err
