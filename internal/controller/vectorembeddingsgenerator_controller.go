@@ -212,31 +212,35 @@ func (r *VectorEmbeddingsGeneratorReconciler) processChunkedFile(ctx context.Con
 
 	logger.Info("generating embeddings for chunks", "file", chunksFilePath, "chunkCount", len(texts))
 
-	const batchSize = 10
+	batchSize := vegConfig.BatchSize
+	if batchSize <= 0 {
+		batchSize = 1000
+	}
+	encodingFormat := vegConfig.NomicEmbedTextV15Config.EncodingFormat
 	allEmbeddings := make([][]float64, 0, len(texts))
 
 	for batchStart := 0; batchStart < len(texts); batchStart += batchSize {
-		batchEnd := batchStart + batchSize
-		if batchEnd > len(texts) {
-			batchEnd = len(texts)
-		}
+		batchEnd := min(batchStart+batchSize, len(texts))
 		batch := texts[batchStart:batchEnd]
 
 		logger.Info("processing batch", "batchStart", batchStart, "batchEnd", batchEnd, "batchSize", len(batch))
-		encodingFormat := vectorEmbeddingsGeneratorCR.Spec.VectorEmbeddingsGeneratorConfig.NomicEmbedTextV15Config.EncodingFormat
 		embeddingResult, err := embeddingClient.GenerateEmbeddings(ctx, batch, encodingFormat)
-		// 429 status code indicates usage limit exceeded
-		if err != nil && strings.Contains(err.Error(), "API returned status 429: Usage limit exceeded") {
-			logger.Info("usage limit exceeded, will retry after 10 seconds", "batchStart", batchStart, "batchEnd", batchEnd)
-			time.Sleep(5 * time.Second)
-			batchStart -= batchSize
-			continue
-		} else if err != nil {
-			logger.Error(err, "failed to generate embeddings for batch", "batchStart", batchStart, "batchEnd", batchEnd)
+		if err != nil {
+			if strings.Contains(err.Error(), "status 429") {
+				logger.Error(err, "embedding API rate limited (429), will retry on next reconciliation", "file", chunksFilePath, "batchStart", batchStart)
+			} else {
+				logger.Error(err, "failed to generate embeddings for batch", "file", chunksFilePath, "batchStart", batchStart, "batchEnd", batchEnd)
+			}
 			return false, err
 		}
 		allEmbeddings = append(allEmbeddings, embeddingResult.Embeddings...)
 		logger.Info("successfully processed batch", "batchStart", batchStart, "batchEnd", batchEnd, "embeddingsGenerated", len(embeddingResult.Embeddings))
+	}
+
+	if len(allEmbeddings) != len(texts) {
+		err := fmt.Errorf("embedding count mismatch: expected %d, got %d", len(texts), len(allEmbeddings))
+		logger.Error(err, "embedding count does not match input text count", "file", chunksFilePath)
+		return false, err
 	}
 
 	logger.Info("successfully generated embeddings", "file", chunksFilePath, "embeddingCount", len(allEmbeddings))
