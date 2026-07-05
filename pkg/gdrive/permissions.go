@@ -138,8 +138,7 @@ func (c *Client) GetFilePermissions(
 							}
 						}
 
-						// Fetch from API
-						members, err := c.googleClient.GetGroupMembers(
+						members, err := c.globalGoogleClient.GetGroupMembers(
 							ctx, p.EmailAddress)
 						if err != nil {
 							return nil, err

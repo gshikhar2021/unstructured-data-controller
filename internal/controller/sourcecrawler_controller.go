@@ -221,7 +221,11 @@ func (r *SourceCrawlerReconciler) buildGDriveSource(
 		return nil, errors.New("cache client not initialized in ControllerConfig")
 	}
 
-	gdriveClient, err := gdrive.NewClient(googleClient, LDAPClient, CacheClient)
+	if GlobalGoogleClient == nil {
+		return nil, errors.New("global Google client for group resolution not initialized in ControllerConfig")
+	}
+
+	gdriveClient, err := gdrive.NewClient(googleClient, GlobalGoogleClient, LDAPClient, CacheClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create gdrive client: %w", err)
 	}
