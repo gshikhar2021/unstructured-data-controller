@@ -31,10 +31,16 @@ import (
 //	  config:
 //	    type: docling
 //	    doclingConfig:
-//	      from_formats: [pdf, docx, html]
+//	      from_formats: [docx, pptx, html, image, pdf, asciidoc, md, csv, xlsx]
 //	      do_ocr: true
-//	      ocr_engine: easyocr
+//	      ocr_preset: auto
+//	      pdf_backend: docling_parse
+//	      pipeline: standard
 //	      table_mode: accurate
+//	      table_cell_matching: true
+//	      do_table_structure: true
+//	      include_images: true
+//	      images_scale: "2.0"
 //	status:
 //	  conditions:
 //	    - type: DocumentProcessorReady
@@ -43,8 +49,19 @@ import (
 //	  jobs: []                               # tracks in-flight docling conversion jobs
 
 const (
-	DocumentProcessorCondition = "DocumentProcessorReady"
+	DocumentProcessorCondition   = "DocumentProcessorReady"
+	DefaultDocumentProcessorType = "docling"
+	DefaultOCRPreset             = "auto"
+	DefaultPDFBackend            = "docling_parse"
+	DefaultPipeline              = "standard"
+	DefaultTableMode             = "accurate"
+	DefaultImageExportMode       = "embedded"
+	DefaultImagesScale           = "2.0"
 )
+
+var defaultFromFormats = []string{"docx", "pptx", "html", "image", "pdf", "asciidoc", "md", "csv", "xlsx"}
+
+func boolPtr(b bool) *bool { return &b }
 
 // DocumentProcessorSpec defines the desired state of DocumentProcessor
 type DocumentProcessorSpec struct {
@@ -185,6 +202,103 @@ func (d *DocumentProcessor) UpdateStatus(message string, err error) {
 		}
 	}
 	d.Status.Conditions = append(d.Status.Conditions, condition)
+}
+
+type DocumentProcessorConfig struct {
+	Type          string        `json:"type,omitempty"`
+	DoclingConfig DoclingConfig `json:"doclingConfig,omitempty"`
+}
+
+type DoclingConfig struct {
+	FromFormats     []string `json:"from_formats,omitempty"`
+	ToFormats       []string `json:"to_formats,omitempty"`
+	ImageExportMode string   `json:"image_export_mode,omitempty"`
+	DoOCR           bool     `json:"do_ocr,omitempty"`
+	ForceOCR        bool     `json:"force_ocr,omitempty"`
+	// Deprecated: use OCRPreset instead.
+	// +optional
+	OCREngine string   `json:"ocr_engine,omitempty"`
+	OCRLang   []string `json:"ocr_lang,omitempty"`
+	// +optional
+	OCRPreset  string `json:"ocr_preset,omitempty"`
+	PDFBackend string `json:"pdf_backend,omitempty"`
+	// +optional
+	Pipeline  string `json:"pipeline,omitempty"`
+	TableMode string `json:"table_mode,omitempty"`
+	// +optional
+	TableCellMatching *bool `json:"table_cell_matching,omitempty"`
+	// +optional
+	DoTableStructure *bool `json:"do_table_structure,omitempty"`
+	// +optional
+	IncludeImages *bool `json:"include_images,omitempty"`
+	// +optional
+	ImagesScale string `json:"images_scale,omitempty"`
+	// +optional
+	DoCodeEnrichment bool `json:"do_code_enrichment,omitempty"`
+	// +optional
+	DoFormulaEnrichment bool `json:"do_formula_enrichment,omitempty"`
+	// +optional
+	DoPictureClassification bool `json:"do_picture_classification,omitempty"`
+	// +optional
+	DoPictureDescription bool `json:"do_picture_description,omitempty"`
+	// +optional
+	DoChartExtraction bool `json:"do_chart_extraction,omitempty"`
+	// +optional
+	PictureDescriptionAreaThreshold string `json:"picture_description_area_threshold,omitempty"`
+	// +optional
+	DocumentTimeout string `json:"document_timeout,omitempty"`
+	// +optional
+	PageRange []int `json:"page_range,omitempty"`
+	// +optional
+	MdPageBreakPlaceholder string `json:"md_page_break_placeholder,omitempty"`
+	// Deprecated: this field is ignored; abort_on_error is always false.
+	// +optional
+	AbortOnError bool `json:"abort_on_error,omitempty"`
+}
+
+// SetDefaults fills in sane defaults for any unset fields.
+func (c *DocumentProcessorConfig) SetDefaults() {
+	if c.Type == "" {
+		c.Type = DefaultDocumentProcessorType
+	}
+	c.DoclingConfig.SetDefaults()
+}
+
+// SetDefaults fills in sane defaults for any unset DoclingConfig fields.
+func (c *DoclingConfig) SetDefaults() {
+	if len(c.FromFormats) == 0 {
+		c.FromFormats = append([]string{}, defaultFromFormats...)
+	}
+	if len(c.ToFormats) == 0 {
+		c.ToFormats = []string{"md"}
+	}
+	if c.ImageExportMode == "" {
+		c.ImageExportMode = DefaultImageExportMode
+	}
+	if c.OCRPreset == "" {
+		c.OCRPreset = DefaultOCRPreset
+	}
+	if c.PDFBackend == "" {
+		c.PDFBackend = DefaultPDFBackend
+	}
+	if c.Pipeline == "" {
+		c.Pipeline = DefaultPipeline
+	}
+	if c.TableMode == "" {
+		c.TableMode = DefaultTableMode
+	}
+	if c.TableCellMatching == nil {
+		c.TableCellMatching = boolPtr(true)
+	}
+	if c.DoTableStructure == nil {
+		c.DoTableStructure = boolPtr(true)
+	}
+	if c.IncludeImages == nil {
+		c.IncludeImages = boolPtr(true)
+	}
+	if c.ImagesScale == "" {
+		c.ImagesScale = DefaultImagesScale
+	}
 }
 
 func init() {

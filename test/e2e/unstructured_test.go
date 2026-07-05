@@ -24,6 +24,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -247,12 +248,34 @@ func TestUnstructuredDataLoad(t *testing.T) {
 				}
 				if len(output.Contents) == 0 {
 					t.Logf("pipeline in progress: %d intermediate files, 0 output files", storageCount)
+					if storageOutput != nil {
+						for _, obj := range storageOutput.Contents {
+							t.Logf("  intermediate file: %s", *obj.Key)
+						}
+					}
+
+					// log DocumentProcessor CR status
+					dpCR := &v1alpha1.DocumentProcessor{}
+					if getErr := kubeClient.Resources(testNamespace).Get(ctx, dataPipelineCRName+"-convert", testNamespace, dpCR); getErr == nil {
+						for _, cond := range dpCR.Status.Conditions {
+							t.Logf("  DocumentProcessor condition: type=%s status=%s reason=%s message=%s", cond.Type, cond.Status, cond.Reason, cond.Message)
+						}
+						t.Logf("  DocumentProcessor jobs: %d, filesProcessed: %d", len(dpCR.Status.Jobs), dpCR.Status.FilesProcessed)
+						for _, job := range dpCR.Status.Jobs {
+							t.Logf("    job: file=%s taskID=%s status=%s attempts=%d", job.FilePath, job.TaskID, job.Status, job.Attempts)
+						}
+					}
+
 					return false, nil
 				}
 				t.Logf("found %d files in output bucket", len(output.Contents))
 				return true, nil
 			},
 		); err != nil {
+			// dump controller and docling-serve logs to help debug CI failures
+			dumpPodLogs(t, testNamespace, "control-plane=controller-manager", "manager")
+			dumpPodLogs(t, testNamespace, "app=docling-serve", "api")
+			dumpPodEvents(t, testNamespace, "app=docling-serve")
 			t.Error(err)
 		}
 
@@ -343,12 +366,11 @@ func TestUnstructuredDataLoad(t *testing.T) {
 		doclingConfig := &v1alpha1.DoclingConfig{
 			FromFormats:     []string{"pdf", "docx", "pptx", "xlsx"},
 			ImageExportMode: "embedded",
-			DoOCR:           true,
-			ForceOCR:        false,
-			OCREngine:       "easyocr",
+			OCRPreset:       "auto",
 			OCRLang:         []string{"en"},
-			PDFBackend:      "dlparse_v4",
-			TableMode:       "accurate",
+			PDFBackend:      "docling_parse",
+			Pipeline:        "standard",
+			TableMode:       "fast",
 		}
 
 		// fetch the latest version of the pipeline CR
@@ -375,10 +397,18 @@ func TestUnstructuredDataLoad(t *testing.T) {
 		}
 		t.Log("pipeline successfully reconciled after docling config change")
 
-		if err := operatorUtils.WaitForResourceReady(ctx, v1alpha1.DocumentProcessorCondition, "documentprocessors.operator.dataverse.redhat.com", dataPipelineCRName+"-convert", testNamespace); err != nil {
+		// verify the config change was propagated to the child CR
+		dpCR := &v1alpha1.DocumentProcessor{}
+		if err := kubeClient.Resources(testNamespace).Get(
+			ctx, dataPipelineCRName+"-convert", testNamespace, dpCR,
+		); err != nil {
 			t.Error(err)
 		}
-		t.Log("DocumentProcessor successfully reconciled after config change")
+		if dpCR.Spec.DocumentProcessorConfig.DoclingConfig.TableMode != "fast" {
+			t.Errorf("expected table_mode fast, got %s",
+				dpCR.Spec.DocumentProcessorConfig.DoclingConfig.TableMode)
+		}
+		t.Log("DocumentProcessor config change propagated successfully")
 
 		return ctx
 	})
@@ -445,4 +475,46 @@ func TestUnstructuredDataLoad(t *testing.T) {
 	)
 
 	testenv.Test(t, feature.Feature())
+}
+
+func dumpPodLogs(t *testing.T, namespace, labelSelector, container string) {
+	t.Helper()
+	cmd := fmt.Sprintf(
+		"kubectl logs -n %s -l %s -c %s --tail=100",
+		namespace, labelSelector, container,
+	)
+	t.Logf("=== Pod logs (%s, container=%s) ===", labelSelector, container)
+	out, err := exec.Command("sh", "-c", cmd).CombinedOutput()
+	if err != nil {
+		t.Logf("failed to get pod logs: %v", err)
+		return
+	}
+	t.Logf("%s", string(out))
+}
+
+func dumpPodEvents(t *testing.T, namespace, labelSelector string) {
+	t.Helper()
+	// get pod name first
+	nameCmd := fmt.Sprintf(
+		"kubectl get pods -n %s -l %s -o jsonpath='{.items[0].metadata.name}'",
+		namespace, labelSelector,
+	)
+	nameOut, err := exec.Command("sh", "-c", nameCmd).CombinedOutput()
+	if err != nil {
+		t.Logf("failed to get pod name: %v", err)
+		return
+	}
+	podName := strings.Trim(string(nameOut), "'")
+
+	t.Logf("=== Pod events and status (%s) ===", podName)
+	descCmd := fmt.Sprintf(
+		"kubectl describe pod -n %s %s | grep -A 20 'Events:\\|Containers:\\|State:\\|Restart Count:\\|Last State:'",
+		namespace, podName,
+	)
+	out, err := exec.Command("sh", "-c", descCmd).CombinedOutput()
+	if err != nil {
+		t.Logf("failed to describe pod: %v", err)
+		return
+	}
+	t.Logf("%s", string(out))
 }

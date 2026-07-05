@@ -52,18 +52,12 @@ import (
 //	      type: DocumentProcessor
 //	      dependsOn:
 //	        - name: crawl
-//	      documentProcessorConfig:
-//	        type: docling
 //	    - name: chunk
 //	      type: ChunksGenerator
 //	      dependsOn: [convert]
-//	      chunksGeneratorConfig:
-//	        strategy: recursiveCharacterTextSplitter
 //	    - name: embed
 //	      type: VectorEmbeddingsGenerator
 //	      dependsOn: [chunk]
-//	      vectorEmbeddingsGeneratorConfig:
-//	        modelName: nomic-embed-text-v1.5
 //	    - name: sync
 //	      type: DestinationSyncer
 //	      dependsOn: [embed]
@@ -127,9 +121,6 @@ func ListStages() []StageMapping {
 
 // PipelineStage defines a single step in the pipeline DAG.
 // +kubebuilder:validation:XValidation:rule="self.type == 'SourceCrawler' ? has(self.sourceCrawlerConfig) : true",message="sourceCrawlerConfig is required when type is SourceCrawler"
-// +kubebuilder:validation:XValidation:rule="self.type == 'DocumentProcessor' ? has(self.documentProcessorConfig) : true",message="documentProcessorConfig is required when type is DocumentProcessor"
-// +kubebuilder:validation:XValidation:rule="self.type == 'ChunksGenerator' ? has(self.chunksGeneratorConfig) : true",message="chunksGeneratorConfig is required when type is ChunksGenerator"
-// +kubebuilder:validation:XValidation:rule="self.type == 'VectorEmbeddingsGenerator' ? has(self.vectorEmbeddingsGeneratorConfig) : true",message="vectorEmbeddingsGeneratorConfig is required when type is VectorEmbeddingsGenerator"
 // +kubebuilder:validation:XValidation:rule="self.type == 'DestinationSyncer' ? has(self.destinationSyncerConfig) : true",message="destinationSyncerConfig is required when type is DestinationSyncer"
 type PipelineStage struct {
 	// +kubebuilder:validation:Required
@@ -192,68 +183,6 @@ type DestinationSyncerConfig struct {
 // StageDependency identifies an upstream stage by name.
 type StageDependency struct {
 	Name string `json:"name"`
-}
-
-type DocumentProcessorConfig struct {
-	Type          string        `json:"type,omitempty"`
-	DoclingConfig DoclingConfig `json:"doclingConfig,omitempty"`
-}
-
-type DoclingConfig struct {
-	FromFormats     []string `json:"from_formats,omitempty"`
-	ToFormats       []string `json:"to_formats,omitempty"`
-	ImageExportMode string   `json:"image_export_mode,omitempty"`
-	DoOCR           bool     `json:"do_ocr,omitempty"`
-	ForceOCR        bool     `json:"force_ocr,omitempty"`
-	OCREngine       string   `json:"ocr_engine,omitempty"`
-	OCRLang         []string `json:"ocr_lang,omitempty"`
-	PDFBackend      string   `json:"pdf_backend,omitempty"`
-	TableMode       string   `json:"table_mode,omitempty"`
-	AbortOnError    bool     `json:"abort_on_error,omitempty"`
-}
-
-type ChunksGeneratorConfig struct {
-	Strategy                         ChunkingStrategy                 `json:"strategy"`
-	RecursiveCharacterSplitterConfig RecursiveCharacterSplitterConfig `json:"recursiveCharacterSplitterConfig,omitempty"`
-	MarkdownSplitterConfig           MarkdownSplitterConfig           `json:"markdownSplitterConfig,omitempty"`
-	TokenSplitterConfig              TokenSplitterConfig              `json:"tokenSplitterConfig,omitempty"`
-}
-
-type RecursiveCharacterSplitterConfig struct {
-	Separators    []string `json:"separators,omitempty"`
-	ChunkSize     int      `json:"chunkSize,omitempty"`
-	ChunkOverlap  int      `json:"chunkOverlap,omitempty"`
-	KeepSeparator bool     `json:"keepSeparator,omitempty"`
-}
-
-type MarkdownSplitterConfig struct {
-	ChunkSize        int  `json:"chunkSize,omitempty"`
-	ChunkOverlap     int  `json:"chunkOverlap,omitempty"`
-	CodeBlocks       bool `json:"codeBlocks,omitempty"`
-	ReferenceLinks   bool `json:"referenceLinks,omitempty"`
-	HeadingHierarchy bool `json:"headingHierarchy,omitempty"`
-	JoinTableRows    bool `json:"joinTableRows,omitempty"`
-}
-
-type TokenSplitterConfig struct {
-	ChunkSize         int      `json:"chunkSize,omitempty"`
-	ChunkOverlap      int      `json:"chunkOverlap,omitempty"`
-	ModelName         string   `json:"modelName,omitempty"`
-	EncodingName      string   `json:"encodingName,omitempty"`
-	AllowedSpecial    []string `json:"allowedSpecial,omitempty"`
-	DisallowedSpecial []string `json:"disallowedSpecial,omitempty"`
-}
-
-type VectorEmbeddingsGeneratorConfig struct {
-	ModelName string `json:"modelName,omitempty"`
-	// +kubebuilder:validation:Minimum=1
-	// +optional
-	BatchSize               int                     `json:"batchSize,omitempty"`
-	NomicEmbedTextV15Config NomicEmbedTextV15Config `json:"nomicEmbedTextV15Config,omitempty"`
-}
-
-type NomicEmbedTextV15Config struct {
-	EncodingFormat string `json:"encodingformat,omitempty"`
 }
 
 // QueryEndpointType identifies the type of query endpoint.

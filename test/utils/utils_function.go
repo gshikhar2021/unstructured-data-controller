@@ -68,16 +68,14 @@ func GetUnstructuredDataPipelineResourceWithStage(name, namespace string) v1alph
 					DocumentProcessorConfig: &v1alpha1.DocumentProcessorConfig{
 						Type: "docling",
 						DoclingConfig: v1alpha1.DoclingConfig{
-							FromFormats:     []string{"pdf", "docx", "doc", "txt", "html", "md", "csv", "xlsx"},
+							FromFormats:     []string{"pdf", "docx", "html", "md", "csv", "xlsx"},
 							ToFormats:       []string{"md"},
-							ImageExportMode: "copy",
-							DoOCR:           false,
-							ForceOCR:        false,
-							OCREngine:       "tesseract",
+							ImageExportMode: "embedded",
+							OCRPreset:       "auto",
 							OCRLang:         []string{"en"},
-							PDFBackend:      "pypdf",
-							TableMode:       "none",
-							AbortOnError:    true,
+							PDFBackend:      "docling_parse",
+							Pipeline:        "standard",
+							TableMode:       "fast",
 						},
 					},
 				},
@@ -131,10 +129,17 @@ func RandomStringGenerator(length int) string {
 	return string(b)
 }
 
-// WaitForResourceReady waits for a resource to be ready
+// WaitForResourceReady waits for a resource to be ready with a default 10m timeout.
 func WaitForResourceReady(ctx context.Context, condition, crdName, resourceName, namespace string) error {
-	cmd := fmt.Sprintf("kubectl wait --for=condition=%s %s %s -n %s --timeout=10m",
-		condition, crdName, resourceName, namespace)
+	return WaitForResourceReadyWithTimeout(ctx, condition, crdName, resourceName, namespace, "10m")
+}
+
+// WaitForResourceReadyWithTimeout waits for a resource to be ready with a custom timeout.
+func WaitForResourceReadyWithTimeout(
+	ctx context.Context, condition, crdName, resourceName, namespace, timeout string,
+) error {
+	cmd := fmt.Sprintf("kubectl wait --for=condition=%s %s %s -n %s --timeout=%s",
+		condition, crdName, resourceName, namespace, timeout)
 	p := utils.RunCommandContext(ctx, cmd)
 	if p.Err() != nil {
 		return p.Err()

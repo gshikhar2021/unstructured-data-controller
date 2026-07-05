@@ -91,6 +91,8 @@ func (r *ChunksGeneratorReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		logger.Error(err, "failed to get ChunksGenerator CR")
 		return ctrl.Result{}, err
 	}
+	chunksGeneratorCR = chunksGeneratorCR.DeepCopy()
+	chunksGeneratorCR.Spec.ChunksGeneratorConfig.SetDefaults()
 
 	// set status to waiting
 	if err := controllerutils.StatusPatch(ctx, r.Client, chunksGeneratorCR, func() {

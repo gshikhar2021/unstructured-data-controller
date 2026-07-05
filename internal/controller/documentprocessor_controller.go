@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -86,6 +87,8 @@ func (r *DocumentProcessorReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		logger.Error(err, "failed to get DocumentProcessor CR")
 		return ctrl.Result{}, err
 	}
+	documentProcessorCR = documentProcessorCR.DeepCopy()
+	documentProcessorCR.Spec.DocumentProcessorConfig.SetDefaults()
 
 	// set status to waiting
 	if err := controllerutils.StatusPatch(ctx, r.Client, documentProcessorCR, func() {
@@ -95,15 +98,32 @@ func (r *DocumentProcessorReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, err
 	}
 
+	cfg := documentProcessorCR.Spec.DocumentProcessorConfig.DoclingConfig
 	r.doclingConfig = &docling.DoclingConfig{
-		FromFormats:     documentProcessorCR.Spec.DocumentProcessorConfig.DoclingConfig.FromFormats,
-		ImageExportMode: documentProcessorCR.Spec.DocumentProcessorConfig.DoclingConfig.ImageExportMode,
-		DoOCR:           documentProcessorCR.Spec.DocumentProcessorConfig.DoclingConfig.DoOCR,
-		ForceOCR:        documentProcessorCR.Spec.DocumentProcessorConfig.DoclingConfig.ForceOCR,
-		OCREngine:       documentProcessorCR.Spec.DocumentProcessorConfig.DoclingConfig.OCREngine,
-		OCRLang:         documentProcessorCR.Spec.DocumentProcessorConfig.DoclingConfig.OCRLang,
-		PDFBackend:      documentProcessorCR.Spec.DocumentProcessorConfig.DoclingConfig.PDFBackend,
-		TableMode:       documentProcessorCR.Spec.DocumentProcessorConfig.DoclingConfig.TableMode,
+		FromFormats:                     cfg.FromFormats,
+		ToFormats:                       cfg.ToFormats,
+		ImageExportMode:                 cfg.ImageExportMode,
+		DoOCR:                           cfg.DoOCR,
+		ForceOCR:                        cfg.ForceOCR,
+		OCREngine:                       cfg.OCREngine, //nolint:staticcheck // backwards compatibility
+		OCRLang:                         cfg.OCRLang,
+		OCRPreset:                       cfg.OCRPreset,
+		PDFBackend:                      cfg.PDFBackend,
+		Pipeline:                        cfg.Pipeline,
+		TableMode:                       cfg.TableMode,
+		TableCellMatching:               cfg.TableCellMatching,
+		DoTableStructure:                cfg.DoTableStructure,
+		IncludeImages:                   cfg.IncludeImages,
+		ImagesScale:                     parseFloat64Ptr(cfg.ImagesScale),
+		DoCodeEnrichment:                cfg.DoCodeEnrichment,
+		DoFormulaEnrichment:             cfg.DoFormulaEnrichment,
+		DoPictureClassification:         cfg.DoPictureClassification,
+		DoPictureDescription:            cfg.DoPictureDescription,
+		DoChartExtraction:               cfg.DoChartExtraction,
+		PictureDescriptionAreaThreshold: parseFloat64Ptr(cfg.PictureDescriptionAreaThreshold),
+		DocumentTimeout:                 parseFloat64Ptr(cfg.DocumentTimeout),
+		PageRange:                       cfg.PageRange,
+		MdPageBreakPlaceholder:          cfg.MdPageBreakPlaceholder,
 	}
 
 	fs, err := filestore.New(ctx, cacheDirectory, dataStorageBucket)
@@ -525,4 +545,15 @@ func (r *DocumentProcessorReconciler) handleError(ctx context.Context, documentP
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, reconcileErr
+}
+
+func parseFloat64Ptr(s string) *float64 {
+	if s == "" {
+		return nil
+	}
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return nil
+	}
+	return &v
 }

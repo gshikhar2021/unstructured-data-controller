@@ -27,7 +27,6 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/imdario/mergo"
 	"golang.org/x/sync/semaphore"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -49,16 +48,31 @@ type TaskStatus string
 
 // +kubebuilder:object:generate=true
 type DoclingConfig struct {
-	FromFormats     []string `json:"from_formats"`
-	ToFormats       []string `json:"to_formats"`
-	ImageExportMode string   `json:"image_export_mode"`
-	DoOCR           bool     `json:"do_ocr"`
-	ForceOCR        bool     `json:"force_ocr"`
-	OCREngine       string   `json:"ocr_engine"`
-	OCRLang         []string `json:"ocr_lang"`
-	PDFBackend      string   `json:"pdf_backend"`
-	TableMode       string   `json:"table_mode"`
-	AbortOnError    bool     `json:"abort_on_error"`
+	FromFormats                     []string `json:"from_formats"`
+	ToFormats                       []string `json:"to_formats"`
+	ImageExportMode                 string   `json:"image_export_mode"`
+	DoOCR                           bool     `json:"do_ocr"`
+	ForceOCR                        bool     `json:"force_ocr"`
+	OCREngine                       string   `json:"ocr_engine,omitempty"`
+	OCRLang                         []string `json:"ocr_lang"`
+	OCRPreset                       string   `json:"ocr_preset,omitempty"`
+	PDFBackend                      string   `json:"pdf_backend"`
+	Pipeline                        string   `json:"pipeline,omitempty"`
+	TableMode                       string   `json:"table_mode"`
+	TableCellMatching               *bool    `json:"table_cell_matching,omitempty"`
+	DoTableStructure                *bool    `json:"do_table_structure,omitempty"`
+	IncludeImages                   *bool    `json:"include_images,omitempty"`
+	ImagesScale                     *float64 `json:"images_scale,omitempty"`
+	DoCodeEnrichment                bool     `json:"do_code_enrichment,omitempty"`
+	DoFormulaEnrichment             bool     `json:"do_formula_enrichment,omitempty"`
+	DoPictureClassification         bool     `json:"do_picture_classification,omitempty"`
+	DoPictureDescription            bool     `json:"do_picture_description,omitempty"`
+	DoChartExtraction               bool     `json:"do_chart_extraction,omitempty"`
+	PictureDescriptionAreaThreshold *float64 `json:"picture_description_area_threshold,omitempty"`
+	DocumentTimeout                 *float64 `json:"document_timeout,omitempty"`
+	PageRange                       []int    `json:"page_range,omitempty"`
+	MdPageBreakPlaceholder          string   `json:"md_page_break_placeholder,omitempty"`
+	AbortOnError                    bool     `json:"abort_on_error"`
 }
 
 type ClientConfig struct {
@@ -140,26 +154,6 @@ func (c *Client) getTaskResultEndpoint(taskID string) (string, error) {
 	return url.JoinPath(c.ClientConfig.URL, "/v1/result", taskID)
 }
 
-func mergeDoclingConfigs(doclingConfig DoclingConfig) (DoclingConfig, error) {
-	defaultDoclingConfig := DoclingConfig{
-		FromFormats:     []string{"pdf", "md", "docx", "pptx"},
-		ToFormats:       []string{"md"},
-		ImageExportMode: "embedded",
-		DoOCR:           true,
-		ForceOCR:        false,
-		OCREngine:       "easyocr",
-		PDFBackend:      "dlparse_v4",
-		TableMode:       "fast",
-		AbortOnError:    true,
-	}
-
-	err := mergo.Merge(&doclingConfig, defaultDoclingConfig, mergo.WithOverride)
-	if err != nil {
-		return DoclingConfig{}, fmt.Errorf("failed to merge docling configs: %w", err)
-	}
-	return doclingConfig, nil
-}
-
 func (c *Client) createHTTPRequest(ctx context.Context, method, endpoint string, payload []byte, authFormat string) (
 	*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, method, endpoint, bytes.NewReader(payload))
@@ -218,12 +212,6 @@ func (c *Client) ConvertFile(
 	ctx context.Context, fileURL string, doclingConfig DoclingConfig,
 ) (*AsyncDoclingResponse, error) {
 	logger := log.FromContext(ctx)
-	var err error
-
-	finalDoclingConfig, err := mergeDoclingConfigs(doclingConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to merge docling configs: %w", err)
-	}
 
 	// we are using TryAcquire to avoid blocking the main thread
 	acquired := c.ClientConfig.sem.TryAcquire(1)
@@ -244,7 +232,7 @@ func (c *Client) ConvertFile(
 	}
 
 	payload, err := json.Marshal(DoclingRequestPayload{
-		Options: &finalDoclingConfig,
+		Options: &doclingConfig,
 		Sources: []DoclingSource{
 			{
 				URL:  fileURL,
