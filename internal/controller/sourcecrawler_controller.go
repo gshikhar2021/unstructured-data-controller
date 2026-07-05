@@ -157,6 +157,13 @@ func (r *SourceCrawlerReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if sourceCrawlerConfig.Type == operatorv1alpha1.TypeS3 {
 		sqsQueueURL := sourceCrawlerConfig.S3Config.SQSQueueURL
 		if sqsQueueURL != "" {
+			sourceAWSConfig, err := controllerutils.AWSConfigFromSecret(ctx, r.Client, sourceCrawlerCR.Spec.SecretRef, sourceCrawlerCR.Namespace, "SOURCE_S3_")
+			if err != nil {
+				return ctrl.Result{}, r.handleError(ctx, sourceCrawlerCR, fmt.Errorf("failed to get source credentials for SQS: %w", err))
+			}
+			if _, err := awsclienthandler.NewSQSClientFromConfig(ctx, sourceAWSConfig); err != nil {
+				return ctrl.Result{}, r.handleError(ctx, sourceCrawlerCR, fmt.Errorf("failed to create SQS client: %w", err))
+			}
 			return handleSQSWakeUp(ctx, sqsQueueURL, sourceCrawlerConfig.S3Config.Bucket, sourceCrawlerConfig.S3Config.Prefix), nil
 		}
 	}
