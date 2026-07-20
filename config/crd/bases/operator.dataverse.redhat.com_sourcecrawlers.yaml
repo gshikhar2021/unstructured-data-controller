@@ -176,6 +176,69 @@ spec:
               filesProcessed:
                 format: int64
                 type: integer
+              inaccessibleItems:
+                properties:
+                  files:
+                    items:
+                      properties:
+                        fileID:
+                          type: string
+                        parentFolderID:
+                          type: string
+                        rootFolderID:
+                          type: string
+                      required:
+                      - fileID
+                      - parentFolderID
+                      - rootFolderID
+                      type: object
+                    type: array
+                  folders:
+                    items:
+                      properties:
+                        folderID:
+                          type: string
+                        folderName:
+                          type: string
+                        rootFolderID:
+                          type: string
+                      required:
+                      - folderID
+                      - folderName
+                      - rootFolderID
+                      type: object
+                    type: array
+                  shortcutTargetFiles:
+                    items:
+                      properties:
+                        rootFolderID:
+                          type: string
+                        shortcutFileID:
+                          type: string
+                        targetFileID:
+                          type: string
+                      required:
+                      - rootFolderID
+                      - shortcutFileID
+                      - targetFileID
+                      type: object
+                    type: array
+                  shortcutTargetFolders:
+                    items:
+                      properties:
+                        rootFolderID:
+                          type: string
+                        shortcutFileID:
+                          type: string
+                        targetFolderID:
+                          type: string
+                      required:
+                      - rootFolderID
+                      - shortcutFileID
+                      - targetFolderID
+                      type: object
+                    type: array
+                type: object
               lastAppliedGeneration:
                 format: int64
                 type: integer

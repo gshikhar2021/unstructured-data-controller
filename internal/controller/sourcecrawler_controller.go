@@ -138,15 +138,23 @@ func (r *SourceCrawlerReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, r.handleError(ctx, sourceCrawlerCR, fmt.Errorf("unsupported source type: %s", sourceCrawlerConfig.Type))
 	}
 
-	storedFiles, err := source.SyncFilesToFilestore(ctx, r.fileStore)
+	syncResult, err := source.SyncFilesToFilestore(ctx, r.fileStore)
 	if err != nil {
 		return ctrl.Result{}, r.handleError(ctx, sourceCrawlerCR, fmt.Errorf("failed to store files to filestore: %w", err))
 	}
-	logger.Info("successfully stored files to filestore", "count", len(storedFiles))
+	logger.Info("successfully stored files to filestore", "count", len(syncResult.StoredFiles))
 
 	successMessage := fmt.Sprintf("successfully reconciled source crawler: %s", sourceCrawlerCR.Name)
+	inaccessible := toAPIInaccessibleItems(syncResult.InaccessibleItems)
+	if inaccessible != nil {
+		total := len(syncResult.InaccessibleItems.Folders) + len(syncResult.InaccessibleItems.Files) +
+			len(syncResult.InaccessibleItems.ShortcutTargetFolders) + len(syncResult.InaccessibleItems.ShortcutTargetFiles)
+		successMessage += fmt.Sprintf(", %d inaccessible items (service account may lack access)", total)
+	}
+
 	if err := controllerutils.StatusPatch(ctx, r.Client, sourceCrawlerCR, func() {
-		sourceCrawlerCR.Status.FilesProcessed += int64(len(storedFiles))
+		sourceCrawlerCR.Status.FilesProcessed += int64(len(syncResult.StoredFiles))
+		sourceCrawlerCR.Status.InaccessibleItems = inaccessible
 		sourceCrawlerCR.UpdateStatus(successMessage, nil)
 	}); err != nil {
 		logger.Error(err, "failed to update SourceCrawler CR status")
@@ -306,6 +314,35 @@ func (r *SourceCrawlerReconciler) handleError(ctx context.Context, sourceCrawler
 		return updateErr
 	}
 	return reconcileErr
+}
+
+func toAPIInaccessibleItems(items gdrive.InaccessibleItems) *operatorv1alpha1.InaccessibleItems {
+	total := len(items.Folders) + len(items.Files) + len(items.ShortcutTargetFolders) + len(items.ShortcutTargetFiles)
+	if total == 0 {
+		return nil
+	}
+	result := &operatorv1alpha1.InaccessibleItems{}
+	for _, f := range items.Folders {
+		result.Folders = append(result.Folders, operatorv1alpha1.InaccessibleFolder{
+			FolderID: f.FolderID, FolderName: f.FolderName, RootFolderID: f.RootFolderID,
+		})
+	}
+	for _, f := range items.Files {
+		result.Files = append(result.Files, operatorv1alpha1.InaccessibleFile{
+			FileID: f.FileID, ParentFolderID: f.ParentFolderID, RootFolderID: f.RootFolderID,
+		})
+	}
+	for _, f := range items.ShortcutTargetFolders {
+		result.ShortcutTargetFolders = append(result.ShortcutTargetFolders, operatorv1alpha1.InaccessibleShortcutFolder{
+			ShortcutFileID: f.ShortcutFileID, TargetFolderID: f.TargetFolderID, RootFolderID: f.RootFolderID,
+		})
+	}
+	for _, f := range items.ShortcutTargetFiles {
+		result.ShortcutTargetFiles = append(result.ShortcutTargetFiles, operatorv1alpha1.InaccessibleShortcutFile{
+			ShortcutFileID: f.ShortcutFileID, TargetFileID: f.TargetFileID, RootFolderID: f.RootFolderID,
+		})
+	}
+	return result
 }
 
 // findDependents maps a changed pipeline stage back to the SourceCrawlers that depend on it.

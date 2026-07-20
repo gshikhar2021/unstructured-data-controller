@@ -37,9 +37,13 @@ import (
 
 const maxFileSize int64 = 128 << 20 // 128 MB — Snowflake external stage limit
 
+type SyncResult struct {
+	StoredFiles       []RawFileMetadata
+	InaccessibleItems gdrive.InaccessibleItems
+}
+
 type DataSource interface {
-	// SyncFilesToFilestore will store all files from the source to the filestore and return the list of file paths
-	SyncFilesToFilestore(ctx context.Context, fs *filestore.FileStore) ([]RawFileMetadata, error)
+	SyncFilesToFilestore(ctx context.Context, fs *filestore.FileStore) (*SyncResult, error)
 }
 
 type S3BucketSource struct {
@@ -49,7 +53,7 @@ type S3BucketSource struct {
 	OutputDir string
 }
 
-func (s *S3BucketSource) SyncFilesToFilestore(ctx context.Context, fs *filestore.FileStore) ([]RawFileMetadata, error) {
+func (s *S3BucketSource) SyncFilesToFilestore(ctx context.Context, fs *filestore.FileStore) (*SyncResult, error) {
 	logger := log.FromContext(ctx)
 	logger.Info("listing objects in prefix", "bucket", s.Bucket, "prefix", s.Prefix)
 	objects, err := awsclienthandler.ListObjectsInPrefix(ctx, s.S3Client, s.Bucket, s.Prefix)
@@ -123,7 +127,7 @@ func (s *S3BucketSource) SyncFilesToFilestore(ctx context.Context, fs *filestore
 		return nil, errors.New(errorMessage)
 	}
 
-	return storedFiles, nil
+	return &SyncResult{StoredFiles: storedFiles}, nil
 }
 
 // storeFile will store the given file to the filestore
@@ -252,7 +256,7 @@ func (g *GDriveSource) Close() {
 	g.GDriveClient.Close()
 }
 
-func (g *GDriveSource) SyncFilesToFilestore(ctx context.Context, fs *filestore.FileStore) ([]RawFileMetadata, error) {
+func (g *GDriveSource) SyncFilesToFilestore(ctx context.Context, fs *filestore.FileStore) (*SyncResult, error) {
 	logger := log.FromContext(ctx)
 
 	// Phase 1: Crawl all root folders concurrently
@@ -281,12 +285,19 @@ func (g *GDriveSource) SyncFilesToFilestore(ctx context.Context, fs *filestore.F
 
 	// Merge and filter crawl records to only successful non-folder files
 	var fileRecords []gdrive.CrawlRecord
+	var mergedInaccessible gdrive.InaccessibleItems
 	seen := make(map[string]bool)
 	for i, r := range results {
 		if r.err != nil {
 			logger.Error(r.err, "folder crawl failed", "folderID", g.FolderIDs[i])
 			continue
 		}
+		mergedInaccessible.Folders = append(mergedInaccessible.Folders, r.result.InaccessibleItems.Folders...)
+		mergedInaccessible.Files = append(mergedInaccessible.Files, r.result.InaccessibleItems.Files...)
+		mergedInaccessible.ShortcutTargetFolders = append(mergedInaccessible.ShortcutTargetFolders,
+			r.result.InaccessibleItems.ShortcutTargetFolders...)
+		mergedInaccessible.ShortcutTargetFiles = append(mergedInaccessible.ShortcutTargetFiles,
+			r.result.InaccessibleItems.ShortcutTargetFiles...)
 		for _, record := range r.result.Records {
 			if record.Status != "successful" {
 				continue
@@ -394,10 +405,10 @@ func (g *GDriveSource) SyncFilesToFilestore(ctx context.Context, fs *filestore.F
 		errorMessage += fmt.Sprintf("fileID: %s, error: %v\n", fileID, err)
 	}
 	if len(errorMessage) > 0 {
-		return storedFiles, errors.New(errorMessage)
+		return &SyncResult{StoredFiles: storedFiles, InaccessibleItems: mergedInaccessible}, errors.New(errorMessage)
 	}
 
-	return storedFiles, nil
+	return &SyncResult{StoredFiles: storedFiles, InaccessibleItems: mergedInaccessible}, nil
 }
 
 // storeFile downloads a Google Drive file and stores it with metadata,
