@@ -65,6 +65,11 @@ func (s *S3BucketSource) SyncFilesToFilestore(ctx context.Context, fs *filestore
 		if strings.HasSuffix(*object.Key, "/") {
 			continue
 		}
+		if object.Size != nil && *object.Size > maxFileSize {
+			logger.Info("skipping file exceeding 128 MB size limit",
+				"key", *object.Key, "sizeMB", *object.Size/(1<<20))
+			continue
+		}
 		file := RawFileMetadata{
 			FilePath: s.filestorePath(*object.Key),
 			UID:      *object.ETag,
@@ -228,6 +233,8 @@ func (s *S3BucketSource) s3Key(filestorePath string) string {
 	baseName := strings.TrimPrefix(filestorePath, s.OutputDir)
 	return path.Join(s.Prefix, baseName)
 }
+
+const maxFileSize int64 = 128 << 20 // 128 MB — Snowflake external stage limit
 
 // GDriveSource implements DataSource for Google Drive folders.
 type GDriveSource struct {
@@ -436,6 +443,12 @@ func (g *GDriveSource) storeFile(
 		data, err := io.ReadAll(reader)
 		if err != nil {
 			return false, fmt.Errorf("failed to read file %s: %w", fileID, err)
+		}
+
+		if int64(len(data)) > maxFileSize {
+			logger.Info("skipping file exceeding 128 MB after export",
+				"fileID", fileID, "sizeMB", len(data)/(1<<20))
+			return false, nil
 		}
 
 		if err := fs.Store(ctx, filePath, data); err != nil {
