@@ -79,7 +79,7 @@ func (r *SourceCrawlerReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	sourceCrawlerCR := &operatorv1alpha1.SourceCrawler{}
 	if err := r.Get(ctx, req.NamespacedName, sourceCrawlerCR); err != nil {
 		if apierrors.IsNotFound(err) {
-			awsclienthandler.DeleteSQSClient(req.Name)
+			awsclienthandler.DeleteSQSClient(req.String())
 			return ctrl.Result{}, nil
 		}
 		logger.Error(err, "failed to get SourceCrawler CR")
@@ -166,10 +166,11 @@ func (r *SourceCrawlerReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			if err != nil {
 				return ctrl.Result{}, r.handleError(ctx, sourceCrawlerCR, fmt.Errorf("failed to get source credentials for SQS: %w", err))
 			}
-			if _, err := awsclienthandler.NewSQSClientFromConfig(ctx, sourceAWSConfig, sourceCrawlerCR.Name); err != nil {
+			namespacedName := types.NamespacedName{Namespace: sourceCrawlerCR.Namespace, Name: sourceCrawlerCR.Name}.String()
+			if _, err := awsclienthandler.NewSQSClientFromConfig(ctx, sourceAWSConfig, namespacedName); err != nil {
 				return ctrl.Result{}, r.handleError(ctx, sourceCrawlerCR, fmt.Errorf("failed to create SQS client: %w", err))
 			}
-			return handleSQSWakeUp(ctx, sqsQueueURL, sourceCrawlerConfig.S3Config.Bucket, sourceCrawlerConfig.S3Config.Prefix, sourceCrawlerCR.Name), nil
+			return handleSQSWakeUp(ctx, sqsQueueURL, sourceCrawlerConfig.S3Config.Bucket, sourceCrawlerConfig.S3Config.Prefix, namespacedName), nil
 		}
 	}
 	return ctrl.Result{RequeueAfter: defaultCrawlerResyncInterval}, nil

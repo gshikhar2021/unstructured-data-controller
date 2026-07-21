@@ -34,8 +34,9 @@ type SQSClientCache struct {
 }
 
 type sqsEntry struct {
-	client   *sqs.Client
-	lastUsed time.Time
+	client    *sqs.Client
+	awsConfig AWSConfig
+	lastUsed  time.Time
 }
 
 var sqsClientCache = &SQSClientCache{
@@ -46,7 +47,7 @@ func InitSQSCache(ctx context.Context, ttl time.Duration) {
 	sqsClientCache.startCleanup(ctx, ttl)
 }
 
-func (c *SQSClientCache) GetClient(pipelineName string) (*sqsEntry, bool) {
+func (c *SQSClientCache) getClient(pipelineName string) (*sqsEntry, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	entry, ok := c.clients[pipelineName]
@@ -56,7 +57,7 @@ func (c *SQSClientCache) GetClient(pipelineName string) (*sqsEntry, bool) {
 	return entry, ok
 }
 
-func (c *SQSClientCache) SetClient(pipelineName string, entry *sqsEntry) {
+func (c *SQSClientCache) setClient(pipelineName string, entry *sqsEntry) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.clients == nil {
@@ -66,6 +67,9 @@ func (c *SQSClientCache) SetClient(pipelineName string, entry *sqsEntry) {
 }
 
 func (c *SQSClientCache) startCleanup(ctx context.Context, ttl time.Duration) {
+	if ttl <= 0 {
+		return
+	}
 	ticker := time.NewTicker(ttl / 2)
 	go func() {
 		defer ticker.Stop()
@@ -95,13 +99,13 @@ func (c *SQSClientCache) evictStale(ttl time.Duration) {
 func NewSQSClientFromConfig(ctx context.Context, awsConfig *AWSConfig, pipelineName string) (*sqs.Client, error) {
 	logger := log.FromContext(ctx)
 
-	entry, ok := sqsClientCache.GetClient(pipelineName)
-	if ok {
+	entry, ok := sqsClientCache.getClient(pipelineName)
+	if ok && awsConfig != nil && entry.awsConfig == *awsConfig {
 		logger.Info("Using existing SQS client for the pipeline", "pipelineName", pipelineName)
 		return entry.client, nil
 	}
 
-	logger.Info("No client is present right now for the pipeline, creating the new one")
+	logger.Info("Creating new SQS client for the pipeline", "pipelineName", pipelineName)
 	cfg, err := getAWSConfig(ctx, awsConfig)
 	if err != nil {
 		return nil, err
@@ -114,10 +118,13 @@ func NewSQSClientFromConfig(ctx context.Context, awsConfig *AWSConfig, pipelineN
 	}
 
 	sqsClient := sqs.NewFromConfig(cfg, sqsOptions)
-	logger.Info("New SQS client successfully created for the pipeline", "pipelineName", pipelineName)
 
-	newEntry := &sqsEntry{client: sqsClient, lastUsed: time.Now()}
-	sqsClientCache.SetClient(pipelineName, newEntry)
+	var cfgVal AWSConfig
+	if awsConfig != nil {
+		cfgVal = *awsConfig
+	}
+	newEntry := &sqsEntry{client: sqsClient, awsConfig: cfgVal, lastUsed: time.Now()}
+	sqsClientCache.setClient(pipelineName, newEntry)
 
 	return sqsClient, nil
 }
@@ -130,7 +137,7 @@ func DeleteSQSClient(pipelineName string) {
 
 // GetSQSClient returns the initialized Amazon SQS client instance.
 func GetSQSClient(pipelineName string) (*sqs.Client, bool) {
-	entry, ok := sqsClientCache.GetClient(pipelineName)
+	entry, ok := sqsClientCache.getClient(pipelineName)
 	if !ok {
 		return nil, false
 	}
