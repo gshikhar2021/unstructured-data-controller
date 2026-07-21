@@ -35,6 +35,8 @@ import (
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/gdrive"
 )
 
+const maxFileSize int64 = 128 << 20 // 128 MB — Snowflake external stage limit
+
 type DataSource interface {
 	// SyncFilesToFilestore will store all files from the source to the filestore and return the list of file paths
 	SyncFilesToFilestore(ctx context.Context, fs *filestore.FileStore) ([]RawFileMetadata, error)
@@ -66,7 +68,7 @@ func (s *S3BucketSource) SyncFilesToFilestore(ctx context.Context, fs *filestore
 			continue
 		}
 		if object.Size != nil && *object.Size > maxFileSize {
-			logger.Info("skipping file exceeding 128 MB size limit",
+			logger.Info("WARNING: skipping file exceeding max file size limit",
 				"key", *object.Key, "sizeMB", *object.Size/(1<<20))
 			continue
 		}
@@ -234,8 +236,6 @@ func (s *S3BucketSource) s3Key(filestorePath string) string {
 	return path.Join(s.Prefix, baseName)
 }
 
-const maxFileSize int64 = 128 << 20 // 128 MB — Snowflake external stage limit
-
 // GDriveSource implements DataSource for Google Drive folders.
 type GDriveSource struct {
 	GDriveClient        *gdrive.Client
@@ -292,6 +292,12 @@ func (g *GDriveSource) SyncFilesToFilestore(ctx context.Context, fs *filestore.F
 				continue
 			}
 			if record.MimeType == "application/vnd.google-apps.folder" {
+				continue
+			}
+			if record.FileSize > 0 && record.FileSize > maxFileSize {
+				logger.Info("WARNING: skipping file exceeding max file size limit",
+					"fileID", record.FileID, "fileName", record.FileName,
+					"sizeMB", record.FileSize/(1<<20))
 				continue
 			}
 			if !seen[record.FileID] {
@@ -440,13 +446,13 @@ func (g *GDriveSource) storeFile(
 		}
 		defer func() { _ = reader.Close() }()
 
-		data, err := io.ReadAll(reader)
+		data, err := io.ReadAll(io.LimitReader(reader, maxFileSize+1))
 		if err != nil {
 			return false, fmt.Errorf("failed to read file %s: %w", fileID, err)
 		}
 
 		if int64(len(data)) > maxFileSize {
-			logger.Info("skipping file exceeding 128 MB after export",
+			logger.Info("WARNING: skipping file exceeding max file size limit",
 				"fileID", fileID, "sizeMB", len(data)/(1<<20))
 			return false, nil
 		}
