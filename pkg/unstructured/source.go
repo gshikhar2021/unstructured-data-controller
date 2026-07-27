@@ -37,9 +37,18 @@ import (
 
 const maxFileSize int64 = 128 << 20 // 128 MB — Snowflake external stage limit
 
+type InaccessibleItem struct {
+	Kind         string
+	ItemID       string
+	Name         string
+	TargetID     string
+	RootFolderID string
+	Reason       string
+}
+
 type SyncResult struct {
 	StoredFiles       []RawFileMetadata
-	InaccessibleItems gdrive.InaccessibleItems
+	InaccessibleItems []InaccessibleItem
 }
 
 type DataSource interface {
@@ -285,19 +294,14 @@ func (g *GDriveSource) SyncFilesToFilestore(ctx context.Context, fs *filestore.F
 
 	// Merge and filter crawl records to only successful non-folder files
 	var fileRecords []gdrive.CrawlRecord
-	var mergedInaccessible gdrive.InaccessibleItems
+	var mergedInaccessible []InaccessibleItem
 	seen := make(map[string]bool)
 	for i, r := range results {
 		if r.err != nil {
 			logger.Error(r.err, "folder crawl failed", "folderID", g.FolderIDs[i])
 			continue
 		}
-		mergedInaccessible.Folders = append(mergedInaccessible.Folders, r.result.InaccessibleItems.Folders...)
-		mergedInaccessible.Files = append(mergedInaccessible.Files, r.result.InaccessibleItems.Files...)
-		mergedInaccessible.ShortcutTargetFolders = append(mergedInaccessible.ShortcutTargetFolders,
-			r.result.InaccessibleItems.ShortcutTargetFolders...)
-		mergedInaccessible.ShortcutTargetFiles = append(mergedInaccessible.ShortcutTargetFiles,
-			r.result.InaccessibleItems.ShortcutTargetFiles...)
+		mergedInaccessible = append(mergedInaccessible, flattenInaccessibleItems(r.result.InaccessibleItems)...)
 		for _, record := range r.result.Records {
 			if record.Status != "successful" {
 				continue
@@ -500,6 +504,32 @@ func (g *GDriveSource) storeFile(
 	}
 
 	return fileChanged, nil
+}
+
+func flattenInaccessibleItems(items gdrive.InaccessibleItems) []InaccessibleItem {
+	total := len(items.Folders) + len(items.Files) + len(items.ShortcutTargetFolders) + len(items.ShortcutTargetFiles)
+	result := make([]InaccessibleItem, 0, total)
+	for _, f := range items.Folders {
+		result = append(result, InaccessibleItem{
+			Kind: "folder", ItemID: f.FolderID, Name: f.FolderName, RootFolderID: f.RootFolderID,
+		})
+	}
+	for _, f := range items.Files {
+		result = append(result, InaccessibleItem{
+			Kind: "file", ItemID: f.FileID, RootFolderID: f.RootFolderID,
+		})
+	}
+	for _, f := range items.ShortcutTargetFolders {
+		result = append(result, InaccessibleItem{
+			Kind: "shortcutFolder", ItemID: f.ShortcutFileID, TargetID: f.TargetFolderID, RootFolderID: f.RootFolderID,
+		})
+	}
+	for _, f := range items.ShortcutTargetFiles {
+		result = append(result, InaccessibleItem{
+			Kind: "shortcutFile", ItemID: f.ShortcutFileID, TargetID: f.TargetFileID, RootFolderID: f.RootFolderID,
+		})
+	}
+	return result
 }
 
 // extractFileID extracts the Google Drive file ID from a filestore

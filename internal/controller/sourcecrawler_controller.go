@@ -141,7 +141,7 @@ func (r *SourceCrawlerReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	syncResult, syncErr := source.SyncFilesToFilestore(ctx, r.fileStore)
 	if syncErr != nil {
 		if syncResult != nil {
-			inaccessible, _ := toAPIInaccessibleItems(syncResult.InaccessibleItems)
+			inaccessible, _ := buildInaccessibleSummary(syncResult.InaccessibleItems)
 			if err := controllerutils.StatusPatch(ctx, r.Client, sourceCrawlerCR, func() {
 				sourceCrawlerCR.Status.FilesProcessed += int64(len(syncResult.StoredFiles))
 				sourceCrawlerCR.Status.InaccessibleItems = inaccessible
@@ -156,7 +156,7 @@ func (r *SourceCrawlerReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	logger.Info("successfully stored files to filestore", "count", len(syncResult.StoredFiles))
 
 	successMessage := fmt.Sprintf("successfully reconciled source crawler: %s", sourceCrawlerCR.Name)
-	inaccessible, total := toAPIInaccessibleItems(syncResult.InaccessibleItems)
+	inaccessible, total := buildInaccessibleSummary(syncResult.InaccessibleItems)
 	if inaccessible != nil {
 		successMessage += fmt.Sprintf(", %d inaccessible items (service account may lack access)", total)
 	}
@@ -325,33 +325,29 @@ func (r *SourceCrawlerReconciler) handleError(ctx context.Context, sourceCrawler
 	return reconcileErr
 }
 
-func toAPIInaccessibleItems(items gdrive.InaccessibleItems) (*operatorv1alpha1.InaccessibleItems, int) {
-	total := len(items.Folders) + len(items.Files) + len(items.ShortcutTargetFolders) + len(items.ShortcutTargetFiles)
+const maxInaccessibleItems = 100
+
+func buildInaccessibleSummary(items []unstructured.InaccessibleItem) (*operatorv1alpha1.InaccessibleSummary, int) {
+	total := len(items)
 	if total == 0 {
 		return nil, 0
 	}
-	result := &operatorv1alpha1.InaccessibleItems{}
-	for _, f := range items.Folders {
-		result.Folders = append(result.Folders, operatorv1alpha1.InaccessibleFolder{
-			FolderID: f.FolderID, FolderName: f.FolderName, RootFolderID: f.RootFolderID,
+	capped := items
+	if len(capped) > maxInaccessibleItems {
+		capped = capped[:maxInaccessibleItems]
+	}
+	apiItems := make([]operatorv1alpha1.InaccessibleItem, 0, len(capped))
+	for _, item := range capped {
+		apiItems = append(apiItems, operatorv1alpha1.InaccessibleItem{
+			Kind:         item.Kind,
+			ItemID:       item.ItemID,
+			Name:         item.Name,
+			TargetID:     item.TargetID,
+			RootFolderID: item.RootFolderID,
+			Reason:       item.Reason,
 		})
 	}
-	for _, f := range items.Files {
-		result.Files = append(result.Files, operatorv1alpha1.InaccessibleFile{
-			FileID: f.FileID, ParentFolderID: f.ParentFolderID, RootFolderID: f.RootFolderID,
-		})
-	}
-	for _, f := range items.ShortcutTargetFolders {
-		result.ShortcutTargetFolders = append(result.ShortcutTargetFolders, operatorv1alpha1.InaccessibleShortcutFolder{
-			ShortcutFileID: f.ShortcutFileID, TargetFolderID: f.TargetFolderID, RootFolderID: f.RootFolderID,
-		})
-	}
-	for _, f := range items.ShortcutTargetFiles {
-		result.ShortcutTargetFiles = append(result.ShortcutTargetFiles, operatorv1alpha1.InaccessibleShortcutFile{
-			ShortcutFileID: f.ShortcutFileID, TargetFileID: f.TargetFileID, RootFolderID: f.RootFolderID,
-		})
-	}
-	return result, total
+	return &operatorv1alpha1.InaccessibleSummary{Items: apiItems, Count: total}, total
 }
 
 // findDependents maps a changed pipeline stage back to the SourceCrawlers that depend on it.

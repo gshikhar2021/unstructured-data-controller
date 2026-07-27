@@ -178,66 +178,32 @@ spec:
                 type: integer
               inaccessibleItems:
                 properties:
-                  files:
+                  count:
+                    type: integer
+                  items:
                     items:
                       properties:
-                        fileID:
+                        itemID:
                           type: string
-                        parentFolderID:
+                        kind:
+                          type: string
+                        name:
+                          type: string
+                        reason:
                           type: string
                         rootFolderID:
                           type: string
+                        targetID:
+                          type: string
                       required:
-                      - fileID
-                      - parentFolderID
+                      - itemID
+                      - kind
                       - rootFolderID
                       type: object
                     type: array
-                  folders:
-                    items:
-                      properties:
-                        folderID:
-                          type: string
-                        folderName:
-                          type: string
-                        rootFolderID:
-                          type: string
-                      required:
-                      - folderID
-                      - folderName
-                      - rootFolderID
-                      type: object
-                    type: array
-                  shortcutTargetFiles:
-                    items:
-                      properties:
-                        rootFolderID:
-                          type: string
-                        shortcutFileID:
-                          type: string
-                        targetFileID:
-                          type: string
-                      required:
-                      - rootFolderID
-                      - shortcutFileID
-                      - targetFileID
-                      type: object
-                    type: array
-                  shortcutTargetFolders:
-                    items:
-                      properties:
-                        rootFolderID:
-                          type: string
-                        shortcutFileID:
-                          type: string
-                        targetFolderID:
-                          type: string
-                      required:
-                      - rootFolderID
-                      - shortcutFileID
-                      - targetFolderID
-                      type: object
-                    type: array
+                    x-kubernetes-list-type: atomic
+                required:
+                - count
                 type: object
               lastAppliedGeneration:
                 format: int64

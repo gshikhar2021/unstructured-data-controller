@@ -60,43 +60,27 @@ type SourceCrawlerSpec struct {
 	SourceCrawlerConfig SourceCrawlerConfig `json:"sourceCrawlerConfig,omitempty"`
 }
 
-type InaccessibleFolder struct {
-	FolderID     string `json:"folderID"`
-	FolderName   string `json:"folderName"`
+type InaccessibleItem struct {
+	Kind         string `json:"kind"`
+	ItemID       string `json:"itemID"`
+	Name         string `json:"name,omitempty"`
+	TargetID     string `json:"targetID,omitempty"`
 	RootFolderID string `json:"rootFolderID"`
+	Reason       string `json:"reason,omitempty"`
 }
 
-type InaccessibleFile struct {
-	FileID         string `json:"fileID"`
-	ParentFolderID string `json:"parentFolderID"`
-	RootFolderID   string `json:"rootFolderID"`
-}
-
-type InaccessibleShortcutFolder struct {
-	ShortcutFileID string `json:"shortcutFileID"`
-	TargetFolderID string `json:"targetFolderID"`
-	RootFolderID   string `json:"rootFolderID"`
-}
-
-type InaccessibleShortcutFile struct {
-	ShortcutFileID string `json:"shortcutFileID"`
-	TargetFileID   string `json:"targetFileID"`
-	RootFolderID   string `json:"rootFolderID"`
-}
-
-type InaccessibleItems struct {
-	Folders               []InaccessibleFolder         `json:"folders,omitempty"`
-	Files                 []InaccessibleFile           `json:"files,omitempty"`
-	ShortcutTargetFolders []InaccessibleShortcutFolder `json:"shortcutTargetFolders,omitempty"`
-	ShortcutTargetFiles   []InaccessibleShortcutFile   `json:"shortcutTargetFiles,omitempty"`
+type InaccessibleSummary struct {
+	// +listType=atomic
+	Items []InaccessibleItem `json:"items,omitempty"`
+	Count int                `json:"count"`
 }
 
 // SourceCrawlerStatus defines the observed state of SourceCrawler.
 type SourceCrawlerStatus struct {
-	LastAppliedGeneration int64              `json:"lastAppliedGeneration,omitempty"`
-	Conditions            []metav1.Condition `json:"conditions,omitempty"`
-	FilesProcessed        int64              `json:"filesProcessed,omitempty"`
-	InaccessibleItems     *InaccessibleItems `json:"inaccessibleItems,omitempty"`
+	LastAppliedGeneration int64                `json:"lastAppliedGeneration,omitempty"`
+	Conditions            []metav1.Condition   `json:"conditions,omitempty"`
+	FilesProcessed        int64                `json:"filesProcessed,omitempty"`
+	InaccessibleItems     *InaccessibleSummary `json:"inaccessibleItems,omitempty"`
 }
 
 // +kubebuilder:object:root=true
