@@ -15,6 +15,7 @@ type EmbeddingFileMetadata struct {
 	ChunkFileMetadata       *ChunksFileMetadata              `json:"chunkFileMetadata"`
 	ModelName               string                           `json:"modelName"`
 	NomicEmbedTextV15Config v1alpha1.NomicEmbedTextV15Config `json:"nomicEmbedTextV15Config,omitempty"`
+	GeminiEmbedding2Config  v1alpha1.GeminiEmbedding2Config  `json:"geminiEmbedding2Config,omitempty"`
 }
 
 type Embeddings struct {
@@ -39,6 +40,9 @@ func (c *EmbeddingFileMetadata) Equal(other *EmbeddingFileMetadata) bool {
 		return false
 	}
 	if !cmp.Equal(c.NomicEmbedTextV15Config, other.NomicEmbedTextV15Config) {
+		return false
+	}
+	if !cmp.Equal(c.GeminiEmbedding2Config, other.GeminiEmbedding2Config) {
 		return false
 	}
 	return true
