@@ -187,35 +187,45 @@ func (r *VectorEmbeddingsGeneratorReconciler) processChunkedFile(ctx context.Con
 		return false, nil
 	}
 
-	embeddingFileMetadata := &unstructured.EmbeddingFileMetadata{
-		ConvertedFileMetadata:   chunkedFile.ConvertedDocument.Metadata,
-		ChunkFileMetadata:       chunkedFile.ChunksDocument.Metadata,
-		ModelName:               vectorEmbeddingsGeneratorCR.Spec.VectorEmbeddingsGeneratorConfig.ModelName,
-		NomicEmbedTextV15Config: vectorEmbeddingsGeneratorCR.Spec.VectorEmbeddingsGeneratorConfig.NomicEmbedTextV15Config,
-	}
-
 	texts := make([]string, len(chunkedFile.ChunksDocument.Chunks.Text))
 	copy(texts, chunkedFile.ChunksDocument.Chunks.Text)
 
-	var embeddingClient embedding.EmbeddingGenerator
-
 	vegConfig := vectorEmbeddingsGeneratorCR.Spec.VectorEmbeddingsGeneratorConfig
-	switch vegConfig.ModelName {
+	modelName := vegConfig.ModelName
+
+	creds, supported := embeddingModelCredentials[Model(modelName)]
+	if !supported {
+		return false, fmt.Errorf("unsupported embedding model: %s", modelName)
+	}
+
+	embeddingClient := embedding.NewHTTPClient(&embedding.HTTPClientConfig{
+		Endpoint:   creds.Endpoint,
+		AuthFormat: "Bearer",
+		APIKey:     creds.APIKey,
+		ModelName:  modelName,
+	})
+
+	embeddingFileMetadata := &unstructured.EmbeddingFileMetadata{
+		ConvertedFileMetadata:   chunkedFile.ConvertedDocument.Metadata,
+		ChunkFileMetadata:       chunkedFile.ChunksDocument.Metadata,
+		ModelName:               modelName,
+		NomicEmbedTextV15Config: vegConfig.NomicEmbedTextV15Config,
+		GeminiEmbedding2Config:  vegConfig.GeminiEmbedding2Config,
+	}
+
+	var encodingFormat string
+	switch modelName {
+	case "gemini-embedding-2":
+		encodingFormat = vegConfig.GeminiEmbedding2Config.EncodingFormat
 	case "nomic-ai/nomic-embed-text-v1.5":
-		embeddingClient = embedding.NewHTTPClient(&embedding.HTTPClientConfig{
-			Endpoint:   embeddingEndpoint,
-			APIKey:     embeddingAPIKey,
-			AuthFormat: "Bearer",
-			ModelName:  vegConfig.ModelName,
-		})
+		encodingFormat = vegConfig.NomicEmbedTextV15Config.EncodingFormat
 	default:
-		return false, fmt.Errorf("unsupported embedding model: %s", vegConfig.ModelName)
+		return false, fmt.Errorf("unsupported model for encoding format: %s", modelName)
 	}
 
 	logger.Info("generating embeddings for chunks", "file", chunksFilePath, "chunkCount", len(texts))
 
 	batchSize := vegConfig.BatchSize
-	encodingFormat := vegConfig.NomicEmbedTextV15Config.EncodingFormat
 	allEmbeddings := make([][]float64, 0, len(texts))
 
 	for batchStart := 0; batchStart < len(texts); batchStart += batchSize {
@@ -334,6 +344,7 @@ func (r *VectorEmbeddingsGeneratorReconciler) needsEmbedding(ctx context.Context
 			ChunkFileMetadata:       chunkedFile.ChunksDocument.Metadata,
 			ModelName:               vectorEmbeddingsGeneratorCR.Spec.VectorEmbeddingsGeneratorConfig.ModelName,
 			NomicEmbedTextV15Config: vectorEmbeddingsGeneratorCR.Spec.VectorEmbeddingsGeneratorConfig.NomicEmbedTextV15Config,
+			GeminiEmbedding2Config:  vectorEmbeddingsGeneratorCR.Spec.VectorEmbeddingsGeneratorConfig.GeminiEmbedding2Config,
 		}
 
 		if currentEmbeddedFile.EmbeddingDocument.Metadata.Equal(fileToEmbedMetadata) {

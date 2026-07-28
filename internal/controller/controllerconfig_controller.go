@@ -40,11 +40,28 @@ import (
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/langchain"
 )
 
+type Model string
+
+type ModelCredentials struct {
+	Endpoint string
+	APIKey   string
+}
+
+var modelMap = map[Model]ModelCredentials{
+	Model("nomic-ai/nomic-embed-text-v1.5"): {
+		Endpoint: "NOMIC_ENDPOINT",
+		APIKey:   "NOMIC_API_KEY",
+	},
+	Model("gemini-embedding-2"): {
+		Endpoint: "GEMINI_ENDPOINT",
+		APIKey:   "GEMINI_API_KEY",
+	},
+}
+
 var (
 	doclingClient                          *docling.Client
 	langchainClient                        *langchain.Client
-	embeddingEndpoint                      string
-	embeddingAPIKey                        string
+	embeddingModelCredentials              = map[Model]ModelCredentials{}
 	UnstructuredDataPipelineResyncInterval *int
 	LDAPClient                             ldap.Client
 	CacheClient                            pkgcache.Cache
@@ -115,8 +132,12 @@ func (r *ControllerConfigReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	logger.Info("File store S3 client created ...")
 
 	// embedding model credentials
-	embeddingEndpoint = string(secret.Data["EMBEDDING_ENDPOINT"])
-	embeddingAPIKey = string(secret.Data["EMBEDDING_API_KEY"])
+	for model, secretKeys := range modelMap {
+		embeddingModelCredentials[model] = ModelCredentials{
+			Endpoint: string(secret.Data[secretKeys.Endpoint]),
+			APIKey:   string(secret.Data[secretKeys.APIKey]),
+		}
+	}
 
 	// initialize LDAP client and cache if configured
 	if config.Spec.LDAPConfig != nil && config.Spec.LDAPConfig.Server != "" {
