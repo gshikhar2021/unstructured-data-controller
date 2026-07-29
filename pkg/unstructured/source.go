@@ -249,6 +249,11 @@ func (s *S3BucketSource) s3Key(filestorePath string) string {
 	return path.Join(s.Prefix, baseName)
 }
 
+type FailedRootFolder struct {
+	FolderID string
+	Error    string
+}
+
 // GDriveSource implements DataSource for Google Drive folders.
 type GDriveSource struct {
 	GDriveClient        *gdrive.Client
@@ -258,6 +263,7 @@ type GDriveSource struct {
 	ConcurrentFolders   int
 	ConcurrentDownloads int
 	OutputDir           string
+	FailedRootFolders   []FailedRootFolder
 }
 
 // Close releases resources held by the underlying clients.
@@ -299,6 +305,10 @@ func (g *GDriveSource) SyncFilesToFilestore(ctx context.Context, fs *filestore.F
 	for i, r := range results {
 		if r.err != nil {
 			logger.Error(r.err, "folder crawl failed", "folderID", g.FolderIDs[i])
+			g.FailedRootFolders = append(g.FailedRootFolders, FailedRootFolder{
+				FolderID: g.FolderIDs[i],
+				Error:    r.err.Error(),
+			})
 			continue
 		}
 		mergedInaccessible = append(mergedInaccessible, flattenInaccessibleItems(r.result.InaccessibleItems)...)
@@ -320,6 +330,11 @@ func (g *GDriveSource) SyncFilesToFilestore(ctx context.Context, fs *filestore.F
 				fileRecords = append(fileRecords, record)
 			}
 		}
+	}
+
+	if len(g.FailedRootFolders) == len(g.FolderIDs) {
+		return &SyncResult{InaccessibleItems: mergedInaccessible},
+			errors.New("all configured root folders are inaccessible (service account may lack access)")
 	}
 
 	logger.Info("gdrive crawl complete, starting file download",

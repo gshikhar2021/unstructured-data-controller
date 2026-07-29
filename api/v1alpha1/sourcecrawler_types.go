@@ -75,12 +75,19 @@ type InaccessibleSummary struct {
 	Count int                `json:"count"`
 }
 
+type InaccessibleRootFolder struct {
+	FolderID string `json:"folderID"`
+	URL      string `json:"url,omitempty"`
+	Error    string `json:"error"`
+}
+
 // SourceCrawlerStatus defines the observed state of SourceCrawler.
 type SourceCrawlerStatus struct {
-	LastAppliedGeneration int64                `json:"lastAppliedGeneration,omitempty"`
-	Conditions            []metav1.Condition   `json:"conditions,omitempty"`
-	FilesProcessed        int64                `json:"filesProcessed,omitempty"`
-	InaccessibleItems     *InaccessibleSummary `json:"inaccessibleItems,omitempty"`
+	LastAppliedGeneration   int64                    `json:"lastAppliedGeneration,omitempty"`
+	Conditions              []metav1.Condition       `json:"conditions,omitempty"`
+	FilesProcessed          int64                    `json:"filesProcessed,omitempty"`
+	InaccessibleItems       *InaccessibleSummary     `json:"inaccessibleItems,omitempty"`
+	InaccessibleRootFolders []InaccessibleRootFolder `json:"inaccessibleRootFolders,omitempty"`
 }
 
 // +kubebuilder:object:root=true

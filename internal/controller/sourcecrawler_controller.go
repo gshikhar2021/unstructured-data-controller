@@ -139,12 +139,20 @@ func (r *SourceCrawlerReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	syncResult, syncErr := source.SyncFilesToFilestore(ctx, r.fileStore)
+
+	// Build inaccessible root folders status from GDriveSource if applicable
+	var failedRootFolders []operatorv1alpha1.InaccessibleRootFolder
+	if gds, ok := source.(*unstructured.GDriveSource); ok && len(gds.FailedRootFolders) > 0 {
+		failedRootFolders = buildInaccessibleRootFolders(gds.FailedRootFolders, sourceCrawlerConfig.GoogleDriveConfig)
+	}
+
 	if syncErr != nil {
 		if syncResult != nil {
 			inaccessible, _ := buildInaccessibleSummary(syncResult.InaccessibleItems)
 			if err := controllerutils.StatusPatch(ctx, r.Client, sourceCrawlerCR, func() {
 				sourceCrawlerCR.Status.FilesProcessed += int64(len(syncResult.StoredFiles))
 				sourceCrawlerCR.Status.InaccessibleItems = inaccessible
+				sourceCrawlerCR.Status.InaccessibleRootFolders = failedRootFolders
 				sourceCrawlerCR.UpdateStatus("", syncErr)
 			}); err != nil {
 				logger.Error(err, "failed to update SourceCrawler CR status with partial results")
@@ -156,6 +164,9 @@ func (r *SourceCrawlerReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	logger.Info("successfully stored files to filestore", "count", len(syncResult.StoredFiles))
 
 	successMessage := fmt.Sprintf("successfully reconciled source crawler: %s", sourceCrawlerCR.Name)
+	if len(failedRootFolders) > 0 {
+		successMessage += fmt.Sprintf(", %d inaccessible root folders", len(failedRootFolders))
+	}
 	inaccessible, total := buildInaccessibleSummary(syncResult.InaccessibleItems)
 	if inaccessible != nil {
 		successMessage += fmt.Sprintf(", %d inaccessible items (service account may lack access)", total)
@@ -164,6 +175,7 @@ func (r *SourceCrawlerReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if err := controllerutils.StatusPatch(ctx, r.Client, sourceCrawlerCR, func() {
 		sourceCrawlerCR.Status.FilesProcessed += int64(len(syncResult.StoredFiles))
 		sourceCrawlerCR.Status.InaccessibleItems = inaccessible
+		sourceCrawlerCR.Status.InaccessibleRootFolders = failedRootFolders
 		sourceCrawlerCR.UpdateStatus(successMessage, nil)
 	}); err != nil {
 		logger.Error(err, "failed to update SourceCrawler CR status")
@@ -326,6 +338,25 @@ func (r *SourceCrawlerReconciler) handleError(ctx context.Context, sourceCrawler
 }
 
 const maxInaccessibleItems = 100
+
+func buildInaccessibleRootFolders(failed []unstructured.FailedRootFolder, gdriveConfig *operatorv1alpha1.GoogleDriveConfig) []operatorv1alpha1.InaccessibleRootFolder {
+	folderIDToURL := make(map[string]string, len(gdriveConfig.Folders))
+	for _, f := range gdriveConfig.Folders {
+		id, err := extractGDriveFolderID(f.URL)
+		if err == nil {
+			folderIDToURL[id] = f.URL
+		}
+	}
+	result := make([]operatorv1alpha1.InaccessibleRootFolder, 0, len(failed))
+	for _, f := range failed {
+		result = append(result, operatorv1alpha1.InaccessibleRootFolder{
+			FolderID: f.FolderID,
+			URL:      folderIDToURL[f.FolderID],
+			Error:    f.Error,
+		})
+	}
+	return result
+}
 
 func buildInaccessibleSummary(items []unstructured.InaccessibleItem) (*operatorv1alpha1.InaccessibleSummary, int) {
 	total := len(items)

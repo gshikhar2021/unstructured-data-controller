@@ -205,6 +205,20 @@ spec:
                 required:
                 - count
                 type: object
+              inaccessibleRootFolders:
+                items:
+                  properties:
+                    error:
+                      type: string
+                    folderID:
+                      type: string
+                    url:
+                      type: string
+                  required:
+                  - error
+                  - folderID
+                  type: object
+                type: array
               lastAppliedGeneration:
                 format: int64
                 type: integer
