@@ -60,11 +60,19 @@ type SourceCrawlerSpec struct {
 	SourceCrawlerConfig SourceCrawlerConfig `json:"sourceCrawlerConfig,omitempty"`
 }
 
+type GDriveFolderStatus struct {
+	FolderID   string `json:"folderID"`
+	URL        string `json:"url,omitempty"`
+	Accessible bool   `json:"accessible"`
+	Error      string `json:"error,omitempty"`
+}
+
 // SourceCrawlerStatus defines the observed state of SourceCrawler.
 type SourceCrawlerStatus struct {
-	LastAppliedGeneration int64              `json:"lastAppliedGeneration,omitempty"`
-	Conditions            []metav1.Condition `json:"conditions,omitempty"`
-	FilesProcessed        int64              `json:"filesProcessed,omitempty"`
+	LastAppliedGeneration int64                `json:"lastAppliedGeneration,omitempty"`
+	Conditions            []metav1.Condition   `json:"conditions,omitempty"`
+	FilesProcessed        int64                `json:"filesProcessed,omitempty"`
+	GDriveStatus          []GDriveFolderStatus `json:"gdriveStatus,omitempty"`
 }
 
 // +kubebuilder:object:root=true

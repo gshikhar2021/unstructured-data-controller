@@ -176,6 +176,22 @@ spec:
               filesProcessed:
                 format: int64
                 type: integer
+              gdriveStatus:
+                items:
+                  properties:
+                    accessible:
+                      type: boolean
+                    error:
+                      type: string
+                    folderID:
+                      type: string
+                    url:
+                      type: string
+                  required:
+                  - accessible
+                  - folderID
+                  type: object
+                type: array
               lastAppliedGeneration:
                 format: int64
                 type: integer

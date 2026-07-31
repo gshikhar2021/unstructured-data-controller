@@ -139,7 +139,18 @@ func (r *SourceCrawlerReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	storedFiles, err := source.SyncFilesToFilestore(ctx, r.fileStore)
+
+	var gdriveStatus []operatorv1alpha1.GDriveFolderStatus
+	if gds, ok := source.(*unstructured.GDriveSource); ok {
+		gdriveStatus = buildGDriveStatus(gds, sourceCrawlerConfig.GoogleDriveConfig)
+	}
+
 	if err != nil {
+		if patchErr := controllerutils.StatusPatch(ctx, r.Client, sourceCrawlerCR, func() {
+			sourceCrawlerCR.Status.GDriveStatus = gdriveStatus
+		}); patchErr != nil {
+			logger.Error(patchErr, "failed to update SourceCrawler CR status with gdrive status")
+		}
 		return ctrl.Result{}, r.handleError(ctx, sourceCrawlerCR, fmt.Errorf("failed to store files to filestore: %w", err))
 	}
 	logger.Info("successfully stored files to filestore", "count", len(storedFiles))
@@ -147,6 +158,7 @@ func (r *SourceCrawlerReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	successMessage := fmt.Sprintf("successfully reconciled source crawler: %s", sourceCrawlerCR.Name)
 	if err := controllerutils.StatusPatch(ctx, r.Client, sourceCrawlerCR, func() {
 		sourceCrawlerCR.Status.FilesProcessed += int64(len(storedFiles))
+		sourceCrawlerCR.Status.GDriveStatus = gdriveStatus
 		sourceCrawlerCR.UpdateStatus(successMessage, nil)
 	}); err != nil {
 		logger.Error(err, "failed to update SourceCrawler CR status")
@@ -293,6 +305,28 @@ func extractGDriveFolderID(rawURL string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("could not extract folder ID from URL path: %s", u.Path)
+}
+
+func buildGDriveStatus(gds *unstructured.GDriveSource, gdriveConfig *operatorv1alpha1.GoogleDriveConfig) []operatorv1alpha1.GDriveFolderStatus {
+	failedMap := make(map[string]string, len(gds.FailedRootFolders))
+	for _, f := range gds.FailedRootFolders {
+		failedMap[f.FolderID] = f.Error
+	}
+	result := make([]operatorv1alpha1.GDriveFolderStatus, 0, len(gdriveConfig.Folders))
+	for i, f := range gdriveConfig.Folders {
+		folderID := gds.FolderIDs[i]
+		status := operatorv1alpha1.GDriveFolderStatus{
+			FolderID:   folderID,
+			URL:        f.URL,
+			Accessible: true,
+		}
+		if errMsg, failed := failedMap[folderID]; failed {
+			status.Accessible = false
+			status.Error = errMsg
+		}
+		result = append(result, status)
+	}
+	return result
 }
 
 func (r *SourceCrawlerReconciler) handleError(ctx context.Context, sourceCrawlerCR *operatorv1alpha1.SourceCrawler, err error) error {
