@@ -139,14 +139,29 @@ func (r *SourceCrawlerReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	storedFiles, err := source.SyncFilesToFilestore(ctx, r.fileStore)
+
+	var failedRootFolders []operatorv1alpha1.InaccessibleRootFolder
+	if gds, ok := source.(*unstructured.GDriveSource); ok && len(gds.FailedRootFolders) > 0 {
+		failedRootFolders = buildInaccessibleRootFolders(gds.FailedRootFolders, sourceCrawlerConfig.GoogleDriveConfig)
+	}
+
 	if err != nil {
+		if err := controllerutils.StatusPatch(ctx, r.Client, sourceCrawlerCR, func() {
+			sourceCrawlerCR.Status.InaccessibleRootFolders = failedRootFolders
+		}); err != nil {
+			logger.Error(err, "failed to update SourceCrawler CR status with inaccessible root folders")
+		}
 		return ctrl.Result{}, r.handleError(ctx, sourceCrawlerCR, fmt.Errorf("failed to store files to filestore: %w", err))
 	}
 	logger.Info("successfully stored files to filestore", "count", len(storedFiles))
 
 	successMessage := fmt.Sprintf("successfully reconciled source crawler: %s", sourceCrawlerCR.Name)
+	if len(failedRootFolders) > 0 {
+		successMessage += fmt.Sprintf(", %d inaccessible root folders", len(failedRootFolders))
+	}
 	if err := controllerutils.StatusPatch(ctx, r.Client, sourceCrawlerCR, func() {
 		sourceCrawlerCR.Status.FilesProcessed += int64(len(storedFiles))
+		sourceCrawlerCR.Status.InaccessibleRootFolders = failedRootFolders
 		sourceCrawlerCR.UpdateStatus(successMessage, nil)
 	}); err != nil {
 		logger.Error(err, "failed to update SourceCrawler CR status")
@@ -293,6 +308,25 @@ func extractGDriveFolderID(rawURL string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("could not extract folder ID from URL path: %s", u.Path)
+}
+
+func buildInaccessibleRootFolders(failed []unstructured.FailedRootFolder, gdriveConfig *operatorv1alpha1.GoogleDriveConfig) []operatorv1alpha1.InaccessibleRootFolder {
+	folderIDToURL := make(map[string]string, len(gdriveConfig.Folders))
+	for _, f := range gdriveConfig.Folders {
+		id, err := extractGDriveFolderID(f.URL)
+		if err == nil {
+			folderIDToURL[id] = f.URL
+		}
+	}
+	result := make([]operatorv1alpha1.InaccessibleRootFolder, 0, len(failed))
+	for _, f := range failed {
+		result = append(result, operatorv1alpha1.InaccessibleRootFolder{
+			FolderID: f.FolderID,
+			URL:      folderIDToURL[f.FolderID],
+			Error:    f.Error,
+		})
+	}
+	return result
 }
 
 func (r *SourceCrawlerReconciler) handleError(ctx context.Context, sourceCrawlerCR *operatorv1alpha1.SourceCrawler, err error) error {
