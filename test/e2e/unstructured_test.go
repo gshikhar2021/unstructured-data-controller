@@ -495,22 +495,35 @@ func TestUnstructuredDataLoad(t *testing.T) {
 		}
 		t.Log("UnstructuredDataPipeline is ready after S3 destination patch")
 
-		destOutput, err := destS3Client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
-			Bucket: aws.String(unstructuredBucketName),
-			Prefix: aws.String(destinationPrefix),
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		foundCount := 0
-		for _, obj := range destOutput.Contents {
-			if obj.Key != nil && strings.HasSuffix(*obj.Key, ".json") {
-				t.Logf("Found embeddings file: %s", *obj.Key)
-				foundCount++
-			}
-		}
-		if foundCount != expectedCount {
-			t.Fatalf("expected %d embeddings files in destination bucket, got %d", expectedCount, foundCount)
+		var foundCount int
+		if err := apimachinerywait.PollUntilContextTimeout(
+			context.Background(),
+			10*time.Second,
+			5*time.Minute,
+			false,
+			func(ctx context.Context) (done bool, err error) {
+				destOutput, listErr := destS3Client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+					Bucket: aws.String(unstructuredBucketName),
+					Prefix: aws.String(destinationPrefix),
+				})
+				if listErr != nil {
+					t.Logf("failed to list destination objects: %v", listErr)
+					return false, nil
+				}
+				foundCount = 0
+				for _, obj := range destOutput.Contents {
+					if obj.Key != nil && strings.HasSuffix(*obj.Key, ".json") {
+						foundCount++
+					}
+				}
+				if foundCount >= expectedCount {
+					return true, nil
+				}
+				t.Logf("waiting for destination sync: %d/%d embeddings files, retrying ...", foundCount, expectedCount)
+				return false, nil
+			},
+		); err != nil {
+			t.Fatalf("timed out waiting for destination sync: expected %d embeddings files, got %d", expectedCount, foundCount)
 		}
 		t.Logf("Found %d embeddings files in destination bucket", foundCount)
 

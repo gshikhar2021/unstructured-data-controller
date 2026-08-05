@@ -316,12 +316,9 @@ func buildGDriveStatus(gds *unstructured.GDriveSource, gdriveConfig *operatorv1a
 	for i, f := range gdriveConfig.Folders {
 		folderID := gds.FolderIDs[i]
 		status := operatorv1alpha1.GDriveFolderStatus{
-			FolderID:   folderID,
-			URL:        f.URL,
-			Accessible: true,
+			URL: f.URL,
 		}
 		if errMsg, failed := failedMap[folderID]; failed {
-			status.Accessible = false
 			status.Error = errMsg
 		}
 		result = append(result, status)

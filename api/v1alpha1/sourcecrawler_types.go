@@ -61,10 +61,8 @@ type SourceCrawlerSpec struct {
 }
 
 type GDriveFolderStatus struct {
-	FolderID   string `json:"folderID"`
-	URL        string `json:"url,omitempty"`
-	Accessible bool   `json:"accessible"`
-	Error      string `json:"error,omitempty"`
+	URL   string `json:"url"`
+	Error string `json:"error,omitempty"`
 }
 
 // SourceCrawlerStatus defines the observed state of SourceCrawler.
