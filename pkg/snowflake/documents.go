@@ -29,24 +29,12 @@ type ProcessedDocumentResult struct {
 func GetProcessedDocument(
 	ctx context.Context, oauthToken, database, schema, table, fileID string,
 ) (*ProcessedDocumentResult, error) {
-	db, err := openConnection(oauthToken)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = db.Close() }()
-
 	query := fmt.Sprintf(
 		`SELECT FILE_ID, MARKDOWN_CONTENT FROM %s.%s.%s WHERE FILE_ID = ? LIMIT 1`,
 		database, schema, table,
 	)
 
-	rows, err := db.QueryContext(ctx, query, fileID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query processed document: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	results, err := scanRows[ProcessedDocumentResult](rows)
+	results, err := queryRows[ProcessedDocumentResult](ctx, oauthToken, query, fileID)
 	if err != nil {
 		return nil, err
 	}
