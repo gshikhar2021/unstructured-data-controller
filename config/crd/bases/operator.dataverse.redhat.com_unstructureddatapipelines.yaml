@@ -209,6 +209,8 @@ spec:
                                 headers:
                                   additionalProperties:
                                     type: string
+                                  description: Additional HTTP headers for the VLM
+                                    API request.
                                   type: object
                                 params:
                                   properties:

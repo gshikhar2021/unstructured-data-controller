@@ -123,11 +123,16 @@ func (r *DocumentProcessorReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		MdPageBreakPlaceholder:          cfg.MdPageBreakPlaceholder,
 	}
 
-	if doclingCfg.PictureDescriptionAPI != nil && vlmAPIKey != "" {
-		if doclingCfg.PictureDescriptionAPI.Headers == nil {
-			doclingCfg.PictureDescriptionAPI.Headers = map[string]string{}
+	if doclingCfg.PictureDescriptionAPI != nil {
+		if vlmAPIURL != "" && doclingCfg.PictureDescriptionAPI.URL == "" {
+			doclingCfg.PictureDescriptionAPI.URL = strings.TrimSpace(vlmAPIURL)
 		}
-		doclingCfg.PictureDescriptionAPI.Headers["Authorization"] = "Bearer " + strings.TrimSpace(vlmAPIKey)
+		if vlmAPIKey != "" {
+			if doclingCfg.PictureDescriptionAPI.Headers == nil {
+				doclingCfg.PictureDescriptionAPI.Headers = map[string]string{}
+			}
+			doclingCfg.PictureDescriptionAPI.Headers["Authorization"] = "Bearer " + strings.TrimSpace(vlmAPIKey)
+		}
 	}
 
 	fs, err := filestore.New(ctx, cacheDirectory, dataStorageBucket)

@@ -93,6 +93,7 @@ type ClientConfig struct {
 	URL                   string
 	Key                   string
 	MaxConcurrentRequests int64
+	HTTPTimeout           time.Duration
 
 	sem *semaphore.Weighted
 }
@@ -186,7 +187,7 @@ func (c *Client) createDoclingRequest(ctx context.Context, method, endpoint stri
 	io.ReadCloser, error) {
 	logger := log.FromContext(ctx)
 	client := &http.Client{
-		Timeout: 60 * time.Second,
+		Timeout: c.ClientConfig.HTTPTimeout,
 	}
 
 	req, err := c.createHTTPRequest(ctx, method, endpoint, payload, "Bearer %s")
@@ -300,16 +301,15 @@ func (c *Client) getTaskStatus(ctx context.Context, taskID string) (bool, *TaskS
 	if err != nil {
 		return false, nil, fmt.Errorf("failed to get response body: %w", err)
 	}
-
-	if err := json.NewDecoder(bodyResponse).Decode(&taskStatusResponse); err != nil {
-		return false, nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
 	defer func() {
 		if err = bodyResponse.Close(); err != nil {
 			err = fmt.Errorf("failed to close response body: %w", err)
 		}
 	}()
+
+	if err := json.NewDecoder(bodyResponse).Decode(&taskStatusResponse); err != nil {
+		return false, nil, fmt.Errorf("failed to decode response: %w", err)
+	}
 
 	return true, &taskStatusResponse, nil
 }
