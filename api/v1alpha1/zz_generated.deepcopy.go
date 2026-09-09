@@ -422,6 +422,16 @@ func (in *DoclingConfig) DeepCopyInto(out *DoclingConfig) {
 		*out = new(bool)
 		**out = **in
 	}
+	if in.DoPictureClassification != nil {
+		in, out := &in.DoPictureClassification, &out.DoPictureClassification
+		*out = new(bool)
+		**out = **in
+	}
+	if in.DoPictureDescription != nil {
+		in, out := &in.DoPictureDescription, &out.DoPictureDescription
+		*out = new(bool)
+		**out = **in
+	}
 	if in.PictureDescriptionAPI != nil {
 		in, out := &in.PictureDescriptionAPI, &out.PictureDescriptionAPI
 		*out = new(PictureDescriptionAPI)

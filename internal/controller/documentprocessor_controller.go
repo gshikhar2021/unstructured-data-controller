@@ -86,6 +86,12 @@ func (r *DocumentProcessorReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	documentProcessorCR = documentProcessorCR.DeepCopy()
 	documentProcessorCR.Spec.DocumentProcessorConfig.SetDefaults()
 
+	// Inject VLM URL from secret into the CRD config so it propagates to stored metadata and wire config.
+	if vlmAPIURL != "" && documentProcessorCR.Spec.DocumentProcessorConfig.DoclingConfig.PictureDescriptionAPI != nil &&
+		documentProcessorCR.Spec.DocumentProcessorConfig.DoclingConfig.PictureDescriptionAPI.URL == "" {
+		documentProcessorCR.Spec.DocumentProcessorConfig.DoclingConfig.PictureDescriptionAPI.URL = strings.TrimSpace(vlmAPIURL)
+	}
+
 	// set status to waiting
 	if err := controllerutils.StatusPatch(ctx, r.Client, documentProcessorCR, func() {
 		documentProcessorCR.SetWaiting()
@@ -113,8 +119,8 @@ func (r *DocumentProcessorReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		ImagesScale:                     parseFloat64Ptr(cfg.ImagesScale),
 		DoCodeEnrichment:                cfg.DoCodeEnrichment,
 		DoFormulaEnrichment:             cfg.DoFormulaEnrichment,
-		DoPictureClassification:         cfg.DoPictureClassification,
-		DoPictureDescription:            cfg.DoPictureDescription,
+		DoPictureClassification:         *cfg.DoPictureClassification,
+		DoPictureDescription:            *cfg.DoPictureDescription,
 		DoChartExtraction:               cfg.DoChartExtraction,
 		PictureDescriptionAPI:           convertPictureDescriptionAPI(cfg.PictureDescriptionAPI),
 		PictureDescriptionAreaThreshold: parseFloat64Ptr(cfg.PictureDescriptionAreaThreshold),
@@ -123,16 +129,12 @@ func (r *DocumentProcessorReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		MdPageBreakPlaceholder:          cfg.MdPageBreakPlaceholder,
 	}
 
-	if doclingCfg.PictureDescriptionAPI != nil {
-		if vlmAPIURL != "" && doclingCfg.PictureDescriptionAPI.URL == "" {
-			doclingCfg.PictureDescriptionAPI.URL = strings.TrimSpace(vlmAPIURL)
+	// Inject auth header into wire config only (secret, not stored in metadata).
+	if doclingCfg.PictureDescriptionAPI != nil && vlmAPIKey != "" {
+		if doclingCfg.PictureDescriptionAPI.Headers == nil {
+			doclingCfg.PictureDescriptionAPI.Headers = map[string]string{}
 		}
-		if vlmAPIKey != "" {
-			if doclingCfg.PictureDescriptionAPI.Headers == nil {
-				doclingCfg.PictureDescriptionAPI.Headers = map[string]string{}
-			}
-			doclingCfg.PictureDescriptionAPI.Headers["Authorization"] = "Bearer " + strings.TrimSpace(vlmAPIKey)
-		}
+		doclingCfg.PictureDescriptionAPI.Headers["Authorization"] = "Bearer " + strings.TrimSpace(vlmAPIKey)
 	}
 
 	fs, err := filestore.New(ctx, cacheDirectory, dataStorageBucket)

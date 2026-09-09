@@ -283,9 +283,9 @@ type DoclingConfig struct {
 	// +optional
 	DoFormulaEnrichment bool `json:"do_formula_enrichment,omitempty"`
 	// +optional
-	DoPictureClassification bool `json:"do_picture_classification,omitempty"`
+	DoPictureClassification *bool `json:"do_picture_classification,omitempty"`
 	// +optional
-	DoPictureDescription bool `json:"do_picture_description,omitempty"`
+	DoPictureDescription *bool `json:"do_picture_description,omitempty"`
 	// +optional
 	DoChartExtraction bool `json:"do_chart_extraction,omitempty"`
 	// +optional
@@ -346,29 +346,31 @@ func (c *DoclingConfig) SetDefaults() {
 	if c.ImagesScale == "" {
 		c.ImagesScale = DefaultImagesScale
 	}
-	if !c.DoPictureDescription {
-		c.DoPictureDescription = true
+	if c.DoPictureDescription == nil {
+		c.DoPictureDescription = boolPtr(true)
 	}
-	if !c.DoPictureClassification {
-		c.DoPictureClassification = true
+	if c.DoPictureClassification == nil {
+		c.DoPictureClassification = boolPtr(true)
 	}
-	if c.PictureDescriptionAPI == nil {
-		c.PictureDescriptionAPI = &PictureDescriptionAPI{}
-	}
-	if c.PictureDescriptionAPI.Params.Model == "" {
-		c.PictureDescriptionAPI.Params.Model = DefaultPictureDescModel
-	}
-	if c.PictureDescriptionAPI.Params.MaxTokens == 0 {
-		c.PictureDescriptionAPI.Params.MaxTokens = DefaultPictureDescMaxTokens
-	}
-	if c.PictureDescriptionAPI.Prompt == "" {
-		c.PictureDescriptionAPI.Prompt = DefaultPictureDescPrompt
-	}
-	if c.PictureDescriptionAPI.Timeout == "" {
-		c.PictureDescriptionAPI.Timeout = DefaultPictureDescTimeout
-	}
-	if c.PictureDescriptionAPI.Concurrency == 0 {
-		c.PictureDescriptionAPI.Concurrency = DefaultPictureDescConcurrency
+	if *c.DoPictureDescription {
+		if c.PictureDescriptionAPI == nil {
+			c.PictureDescriptionAPI = &PictureDescriptionAPI{}
+		}
+		if c.PictureDescriptionAPI.Params.Model == "" {
+			c.PictureDescriptionAPI.Params.Model = DefaultPictureDescModel
+		}
+		if c.PictureDescriptionAPI.Params.MaxTokens == 0 {
+			c.PictureDescriptionAPI.Params.MaxTokens = DefaultPictureDescMaxTokens
+		}
+		if c.PictureDescriptionAPI.Prompt == "" {
+			c.PictureDescriptionAPI.Prompt = DefaultPictureDescPrompt
+		}
+		if c.PictureDescriptionAPI.Timeout == "" {
+			c.PictureDescriptionAPI.Timeout = DefaultPictureDescTimeout
+		}
+		if c.PictureDescriptionAPI.Concurrency == 0 {
+			c.PictureDescriptionAPI.Concurrency = DefaultPictureDescConcurrency
+		}
 	}
 }
 
