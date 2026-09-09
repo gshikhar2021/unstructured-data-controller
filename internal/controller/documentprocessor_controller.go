@@ -92,6 +92,14 @@ func (r *DocumentProcessorReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		documentProcessorCR.Spec.DocumentProcessorConfig.DoclingConfig.PictureDescriptionAPI.URL = strings.TrimSpace(vlmAPIURL)
 	}
 
+	if documentProcessorCR.Spec.DocumentProcessorConfig.DoclingConfig.DoPictureDescription != nil &&
+		*documentProcessorCR.Spec.DocumentProcessorConfig.DoclingConfig.DoPictureDescription &&
+		(documentProcessorCR.Spec.DocumentProcessorConfig.DoclingConfig.PictureDescriptionAPI == nil ||
+			documentProcessorCR.Spec.DocumentProcessorConfig.DoclingConfig.PictureDescriptionAPI.URL == "") {
+		return r.handleError(ctx, documentProcessorCR,
+			errors.New("VLM API URL is required for picture description but is not set in the DocumentProcessor CR or the VLM API URL secret"))
+	}
+
 	// set status to waiting
 	if err := controllerutils.StatusPatch(ctx, r.Client, documentProcessorCR, func() {
 		documentProcessorCR.SetWaiting()
@@ -559,6 +567,17 @@ func (r *DocumentProcessorReconciler) handleError(ctx context.Context, documentP
 	return ctrl.Result{}, reconcileErr
 }
 
+func copyHeaders(h map[string]string) map[string]string {
+	if h == nil {
+		return nil
+	}
+	out := make(map[string]string, len(h))
+	for k, v := range h {
+		out[k] = v
+	}
+	return out
+}
+
 func convertPictureDescriptionAPI(api *operatorv1alpha1.PictureDescriptionAPI) *docling.PictureDescriptionAPI {
 	if api == nil {
 		return nil
@@ -578,7 +597,7 @@ func convertPictureDescriptionAPI(api *operatorv1alpha1.PictureDescriptionAPI) *
 		Prompt:      api.Prompt,
 		Timeout:     timeout,
 		Concurrency: api.Concurrency,
-		Headers:     api.Headers,
+		Headers:     copyHeaders(api.Headers),
 	}
 }
 
