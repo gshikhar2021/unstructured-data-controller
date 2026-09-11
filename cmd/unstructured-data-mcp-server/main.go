@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -32,6 +33,7 @@ import (
 	mcptools "github.com/redhat-data-and-ai/unstructured-data-controller/internal/mcp/tools"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/auth"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/embedding"
+	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/filestatus"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/k8sclient"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/logger"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/snowflake"
@@ -82,13 +84,11 @@ func main() {
 		ModelName:  os.Getenv("EMBEDDING_MODEL_NAME"),
 	})
 
-	statusQuerier := &snowflake.SnowflakeQuerier{}
-
 	mcptools.RegisterListPipelines(mcpServer, k8sClient)
 	mcptools.RegisterGetChunksForEmbeddings(mcpServer, k8sClient, embeddingClient)
 	mcptools.RegisterGetProcessedDocument(mcpServer, k8sClient)
-	mcptools.RegisterGetPipelineProcessingStatus(mcpServer, k8sClient, statusQuerier)
-	mcptools.RegisterListFilesInPipeline(mcpServer, k8sClient, statusQuerier)
+	mcptools.RegisterGetPipelineProcessingStatus(mcpServer, k8sClient, newStatusQuerier)
+	mcptools.RegisterListFilesInPipeline(mcpServer, k8sClient, newStatusQuerier)
 
 	oauthStore := auth.NewOAuthStore()
 	oauthMiddleware := auth.NewMiddleware(provider, slog.Default(), oauthCfg.DisableIntrospection)
@@ -117,8 +117,8 @@ func main() {
 	mux.HandleFunc("/auth/token", oauthServer.HandleToken)
 
 	// REST API endpoints (OAuth-protected)
-	fileStatusHandler := mcproutes.NewFileStatusHandler(k8sClient, statusQuerier)
-	mux.Handle("GET /api/v1/pipelines/{pipeline_name}/files", oauthMiddleware.Authenticate(fileStatusHandler))
+	fileStatusHandler := mcproutes.NewFileStatusHandler(k8sClient, newStatusQuerier)
+	mux.Handle("/api/v1/pipelines/{pipeline_name}/files", oauthMiddleware.Authenticate(fileStatusHandler))
 
 	mux.HandleFunc("/healthz", healthHandler)
 	mux.HandleFunc("/readyz", healthHandler)
@@ -168,6 +168,15 @@ func main() {
 	oauthMiddleware.Close()
 	oauthStore.Close()
 	slog.Info("MCP server stopped")
+}
+
+func newStatusQuerier(t filestatus.StatusQuerierType) (filestatus.StatusQuerier, error) {
+	switch t {
+	case filestatus.StatusQuerierTypeSnowflake:
+		return &snowflake.SnowflakeQuerier{}, nil
+	default:
+		return nil, fmt.Errorf("unsupported status provider %q", t)
+	}
 }
 
 func healthHandler(w http.ResponseWriter, _ *http.Request) {
