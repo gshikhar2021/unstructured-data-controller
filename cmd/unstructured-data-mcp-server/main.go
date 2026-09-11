@@ -34,6 +34,7 @@ import (
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/embedding"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/k8sclient"
 	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/logger"
+	"github.com/redhat-data-and-ai/unstructured-data-controller/pkg/snowflake"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
@@ -81,11 +82,13 @@ func main() {
 		ModelName:  os.Getenv("EMBEDDING_MODEL_NAME"),
 	})
 
+	statusQuerier := &snowflake.SnowflakeQuerier{}
+
 	mcptools.RegisterListPipelines(mcpServer, k8sClient)
 	mcptools.RegisterGetChunksForEmbeddings(mcpServer, k8sClient, embeddingClient)
 	mcptools.RegisterGetProcessedDocument(mcpServer, k8sClient)
-	mcptools.RegisterGetPipelineProcessingStatus(mcpServer, k8sClient)
-	mcptools.RegisterListFilesInPipeline(mcpServer, k8sClient)
+	mcptools.RegisterGetPipelineProcessingStatus(mcpServer, k8sClient, statusQuerier)
+	mcptools.RegisterListFilesInPipeline(mcpServer, k8sClient, statusQuerier)
 
 	oauthStore := auth.NewOAuthStore()
 	oauthMiddleware := auth.NewMiddleware(provider, slog.Default(), oauthCfg.DisableIntrospection)
@@ -114,7 +117,7 @@ func main() {
 	mux.HandleFunc("/auth/token", oauthServer.HandleToken)
 
 	// REST API endpoints (OAuth-protected)
-	fileStatusHandler := mcproutes.NewFileStatusHandler(k8sClient)
+	fileStatusHandler := mcproutes.NewFileStatusHandler(k8sClient, statusQuerier)
 	mux.Handle("GET /api/v1/pipelines/{pipeline_name}/files", oauthMiddleware.Authenticate(fileStatusHandler))
 
 	mux.HandleFunc("/healthz", healthHandler)
