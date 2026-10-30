@@ -22,6 +22,22 @@ type EmbeddingFileMetadata struct {
 type Embeddings struct {
 	Text      string    `json:"text"`
 	Embedding []float64 `json:"embedding"`
+
+	// Block metadata, present only for documents chunked by block. All
+	// optional so a document chunked from flat markdown serialises exactly as
+	// it did before.
+	ChunkID string `json:"chunkID,omitempty"`
+	// EmbedText is what was actually sent to the embedding model: Text with a
+	// metadata prefix. Kept so a retrieval result can be traced back to the
+	// vector that matched it.
+	EmbedText     string    `json:"embedText,omitempty"`
+	BlockClass    string    `json:"blockClass,omitempty"`
+	PageNumber    int       `json:"pageNumber,omitempty"`
+	BlockIndex    int       `json:"blockIndex,omitempty"`
+	PartIndex     int       `json:"partIndex,omitempty"`
+	SectionHeader string    `json:"sectionHeader,omitempty"`
+	BBox          []float64 `json:"bbox,omitempty"`
+	CropURI       string    `json:"cropURI,omitempty"`
 }
 
 type EmbeddingsFile struct {

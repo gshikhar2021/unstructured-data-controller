@@ -215,8 +215,18 @@ func (r *VectorEmbeddingsGeneratorReconciler) processChunkedFile(ctx context.Con
 		return false, nil
 	}
 
-	texts := make([]string, len(chunkedFile.ChunksDocument.Chunks.Text))
-	copy(texts, chunkedFile.ChunksDocument.Chunks.Text)
+	// Block chunks carry a metadata-prefixed embed text. Embedding that
+	// rather than the bare body lets the vector capture which document, page
+	// and section the chunk came from.
+	blocks := chunkedFile.ChunksDocument.Chunks.Blocks
+	texts := make([]string, 0, len(chunkedFile.ChunksDocument.Chunks.Text))
+	if len(blocks) > 0 {
+		for _, blockChunk := range blocks {
+			texts = append(texts, blockChunk.EmbedText)
+		}
+	} else {
+		texts = append(texts, chunkedFile.ChunksDocument.Chunks.Text...)
+	}
 
 	vegConfig := vectorEmbeddingsGeneratorCR.Spec.VectorEmbeddingsGeneratorConfig
 	modelName := vegConfig.ModelName
@@ -288,6 +298,21 @@ func (r *VectorEmbeddingsGeneratorReconciler) processChunkedFile(ctx context.Con
 		embeddings[i] = &unstructured.Embeddings{
 			Text:      texts[i],
 			Embedding: embeddingVector,
+		}
+		if i < len(blocks) {
+			// Text is the chunk body; texts[i] held the prefixed variant that
+			// was embedded, which is recorded separately as EmbedText.
+			blockChunk := blocks[i]
+			embeddings[i].Text = blockChunk.Text
+			embeddings[i].ChunkID = blockChunk.ChunkID
+			embeddings[i].EmbedText = blockChunk.EmbedText
+			embeddings[i].BlockClass = blockChunk.BlockClass
+			embeddings[i].PageNumber = blockChunk.PageNumber
+			embeddings[i].BlockIndex = blockChunk.BlockIndex
+			embeddings[i].PartIndex = blockChunk.PartIndex
+			embeddings[i].SectionHeader = blockChunk.SectionHeader
+			embeddings[i].BBox = blockChunk.BBox
+			embeddings[i].CropURI = blockChunk.CropURI
 		}
 	}
 

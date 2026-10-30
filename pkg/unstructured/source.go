@@ -383,15 +383,20 @@ func (g *GDriveSource) SyncFilesToFilestore(ctx context.Context, fs *filestore.F
 				mu.Unlock()
 				return nil
 			}
+			// Only files actually written are counted, matching the S3
+			// source. The caller adds len(storedFiles) to
+			// Status.FilesProcessed, which FilesProcessedChangedPredicate
+			// watches: counting every file seen would change the status on
+			// every pass, waking every downstream stage, whose own status
+			// updates wake this crawler again. Garbage collection is driven
+			// by currentFiles, not this list, so it is unaffected.
 			if stored {
 				logger.Info("stored gdrive file",
 					"fileID", record.FileID, "fileName", record.FileName)
+				mu.Lock()
+				storedFiles = append(storedFiles, file)
+				mu.Unlock()
 			}
-
-			// still append the file to the storedFiles list,
-			mu.Lock()
-			storedFiles = append(storedFiles, file)
-			mu.Unlock()
 
 			return nil
 		})

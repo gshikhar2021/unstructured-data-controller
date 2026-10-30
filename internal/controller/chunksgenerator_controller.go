@@ -127,6 +127,13 @@ func (r *ChunksGeneratorReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	var filesProcessed int64
 
 	for _, convertedFilePath := range filePaths {
+		// The upstream stage directory also holds binary assets such as block
+		// crop images, and ListFilesInPath returns every key under the prefix.
+		// Without this they would be handed to a JSON unmarshal, fail, and
+		// leave the stage permanently unhealthy.
+		if !unstructured.IsStageDocument(convertedFilePath) {
+			continue
+		}
 		logger.Info("processing converted file", "file", convertedFilePath)
 		processed, err := r.processConvertedFile(ctx, convertedFilePath, chunksGeneratorCR, inputPath, outputPath)
 		if err != nil {
@@ -362,24 +369,65 @@ func (r *ChunksGeneratorReconciler) chunkFile(ctx context.Context, convertedFile
 		return nil, fmt.Errorf("invalid strategy: %s", chunksGeneratorCR.Spec.ChunksGeneratorConfig.Strategy)
 	}
 
-	chunks, err := chunker.Chunk(convertedFile.ConvertedDocument.Content.Markdown)
-	if err != nil {
-		return nil, err
+	// A block-aware parser gives us semantic boundaries, so one block becomes
+	// one chunk. Without pages there is only flat markdown, so fall back to
+	// splitting it.
+	chunkingTool := unstructured.LangchainChunkingTool
+	chunks := &unstructured.Chunks{}
+
+	if len(convertedFile.ConvertedDocument.Content.Pages) > 0 {
+		metadata := convertedFile.ConvertedDocument.Metadata
+		blocks, err := unstructured.ChunksFromPages(
+			convertedFile.ConvertedDocument.Content.Pages,
+			unstructured.BlockChunkOptions{
+				DocID:    metadata.FileIdentifier,
+				DocTitle: documentTitle(metadata),
+				// A block can be far larger than the embedding model's
+				// context. Oversized blocks are split across several chunks
+				// that keep the block's metadata, reusing the splitter the
+				// CR already configures.
+				MaxChunkChars: chunksGeneratorCR.Spec.ChunksGeneratorConfig.MaxChunkChars,
+				Splitter:      chunker,
+			})
+		if err != nil {
+			return nil, err
+		}
+		chunkingTool = unstructured.BlockChunkingTool
+		chunks.Blocks = blocks
+		// Text stays populated so the chunks materialized view and any
+		// consumer written against the original schema keep working.
+		chunks.Text = unstructured.ChunkTexts(blocks)
+		logger.Info("chunked document by block",
+			"file", convertedFilePath, "pages", len(convertedFile.ConvertedDocument.Content.Pages),
+			"chunks", len(blocks))
+	} else {
+		text, err := chunker.Chunk(convertedFile.ConvertedDocument.Content.Markdown)
+		if err != nil {
+			return nil, err
+		}
+		chunks.Text = text
 	}
 
 	return &unstructured.ChunksFile{
 		ConvertedDocument: convertedFile.ConvertedDocument,
 		ChunksDocument: &unstructured.ChunksDocument{
 			Metadata: &unstructured.ChunksFileMetadata{
-				ChunkingTool:          unstructured.LangchainChunkingTool,
+				ChunkingTool:          chunkingTool,
 				ChunksGeneratorConfig: chunksGeneratorCR.Spec.ChunksGeneratorConfig,
 				ConvertedFileMetadata: convertedFile.ConvertedDocument.Metadata,
 			},
-			Chunks: &unstructured.Chunks{
-				Text: chunks,
-			},
+			Chunks: chunks,
 		},
 	}, nil
+}
+
+// documentTitle is the human-readable name used in the embedding prefix,
+// falling back to the stored path when the crawler recorded no file name.
+func documentTitle(metadata *unstructured.ConvertedFileMetadata) string {
+	if metadata.FileName != "" {
+		return metadata.FileName
+	}
+	return metadata.RawFilePath
 }
 
 func (r *ChunksGeneratorReconciler) findDependents(ctx context.Context, obj client.Object) []reconcile.Request {
